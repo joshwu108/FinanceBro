@@ -16,12 +16,11 @@ async def lifespan(app: FastAPI):
     print("🚀 Starting FinanceBro API...")
     await init_db()
     await init_redis()
-    print("✅ Database and Redis initialized")
+    print("Database and Redis initialized")
     
     yield
-    
     # Shutdown
-    print("🛑 Shutting down FinanceBro API...")
+    print("Shutting down FinanceBro API...")
 
 
 app = FastAPI(

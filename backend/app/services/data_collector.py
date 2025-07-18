@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 class DataCollector:
     """Collects stock data from multiple sources"""
-    
     def __init__(self):
         self.alpha_vantage_key = os.getenv("ALPHA_VANTAGE_API_KEY")
         self.cache = {}  # Simple in-memory cache
@@ -44,10 +43,7 @@ class DataCollector:
         try:
             logger.info(f"Fetching data for {symbol} from Yahoo Finance")
             
-            # Create ticker object
             ticker = yf.Ticker(symbol)
-            
-            # Get historical data
             data = ticker.history(period=period, interval=interval)
             
             if data.empty:

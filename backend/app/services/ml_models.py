@@ -79,21 +79,21 @@ class MLModelManager:
         # Model configurations
         self.model_configs = {
             'random_forest': {
-                'n_estimators': 100,
+                'n_estimators': 500,
                 'max_depth': 10,
                 'random_state': 42
             },
             'xgboost': {
-                'n_estimators': 100,
+                'n_estimators': 500,
                 'max_depth': 6,
                 'learning_rate': 0.1,
                 'random_state': 42
             },
             'lstm': {
                 'hidden_size': 50,
-                'num_layers': 2,
+                'num_layers': 4,
                 'dropout': 0.2,
-                'epochs': 50,
+                'epochs': 100,
                 'batch_size': 32,
                 'learning_rate': 0.001
             }

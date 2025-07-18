@@ -20,7 +20,7 @@ class FeatureEngineer:
     def calculate_technical_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Calculate technical indicators from OHLCV data
-        
+
         Args:
             data: DataFrame with OHLCV data
         
@@ -29,37 +29,21 @@ class FeatureEngineer:
         """
         if data.empty:
             return data
-        
-        # Make a copy to avoid modifying original data
         df = data.copy()
-        
-        # Ensure we have required columns
         required_cols = ['open', 'high', 'low', 'close', 'volume']
         missing_cols = [col for col in required_cols if col not in df.columns]
         if missing_cols:
             logger.error(f"Missing required columns: {missing_cols}")
             return df
         
-        logger.info("Calculating technical indicators...")
-        
-        # 1. Trend Indicators
+        '''Technical Indicators'''
         df = self._add_trend_indicators(df)
-        
-        # 2. Momentum Indicators
         df = self._add_momentum_indicators(df)
-        
-        # 3. Volatility Indicators
         df = self._add_volatility_indicators(df)
-        
-        # 4. Volume Indicators
         df = self._add_volume_indicators(df)
-        
-        # 5. Price-based Features
         df = self._add_price_features(df)
-        
-        # 6. Time-based Features
         df = self._add_time_features(df)
-        
+
         logger.info(f"Added {len(self.feature_columns)} technical indicators")
         return df
     
@@ -132,7 +116,9 @@ class FeatureEngineer:
         df['bb_lower'] = ta.volatility.bollinger_lband(df['close'])
         df['bb_middle'] = ta.volatility.bollinger_mavg(df['close'])
         df['bb_width'] = df['bb_upper'] - df['bb_lower']
-        df['bb_position'] = (df['close'] - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])
+        # Bollinger Band position (with safety check)
+        bb_range = df['bb_upper'] - df['bb_lower']
+        df['bb_position'] = (df['close'] - df['bb_lower']) / bb_range.replace(0, np.nan)
         
         # Average True Range
         df['atr'] = ta.volatility.average_true_range(df['high'], df['low'], df['close'])
@@ -151,15 +137,15 @@ class FeatureEngineer:
     def _add_volume_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add volume-based indicators"""
         
-        # Volume SMA
-        df['volume_sma_5'] = ta.volume.volume_sma(df['close'], df['volume'], window=5)
-        df['volume_sma_20'] = ta.volume.volume_sma(df['close'], df['volume'], window=20)
+        # Volume SMA (using rolling mean instead)
+        df['volume_sma_5'] = df['volume'].rolling(window=5).mean()
+        df['volume_sma_20'] = df['volume'].rolling(window=20).mean()
         
         # On Balance Volume
         df['obv'] = ta.volume.on_balance_volume(df['close'], df['volume'])
         
-        # Volume Rate of Change
-        df['volume_roc'] = ta.volume.volume_roc(df['volume'])
+        # Volume Rate of Change (using pandas)
+        df['volume_roc'] = df['volume'].pct_change()
         
         # Accumulation/Distribution Line
         df['adl'] = ta.volume.acc_dist_index(df['high'], df['low'], df['close'], df['volume'])
@@ -191,9 +177,9 @@ class FeatureEngineer:
         df['close_std_5'] = df['close'].rolling(window=5).std()
         df['close_std_20'] = df['close'].rolling(window=20).std()
         
-        # Price ratios
-        df['close_sma_ratio'] = df['close'] / df['sma_20']
-        df['close_ema_ratio'] = df['close'] / df['ema_26']
+        # Price ratios (with safety checks)
+        df['close_sma_ratio'] = df['close'] / df['sma_20'].replace(0, np.nan)
+        df['close_ema_ratio'] = df['close'] / df['ema_26'].replace(0, np.nan)
         
         self.feature_columns.extend([
             'price_change', 'price_change_2d', 'price_change_5d',
@@ -270,7 +256,7 @@ class FeatureEngineer:
         df: pd.DataFrame, 
         target_column: str = 'target_direction_1d',
         test_size: float = 0.2,
-        sequence_length: int = 30
+        sequence_length: int = 5
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Prepare data for ML models
@@ -284,8 +270,17 @@ class FeatureEngineer:
         Returns:
             X_train, X_test, y_train, y_test
         """
-        # Remove rows with NaN values
-        df_clean = df.dropna()
+        df_clean = df.dropna(subset=[target_column])
+        df_clean = df_clean.fillna(method='ffill').fillna(method='bfill')
+        
+        # Replace infinity values with NaN, then fill
+        df_clean = df_clean.replace([np.inf, -np.inf], np.nan)
+        df_clean = df_clean.fillna(method='ffill').fillna(method='bfill')
+        df_clean = df_clean.fillna(0)
+        
+        print(f"Data shape after cleaning: {df_clean.shape}")
+        print(f"Sample of cleaned data:")
+        print(df_clean.head(3))
         
         # Select feature columns (exclude date, symbol, and target columns)
         exclude_cols = ['date', 'symbol'] + [col for col in df_clean.columns if col.startswith('target_')]
@@ -295,7 +290,6 @@ class FeatureEngineer:
         X = df_clean[feature_cols].values
         y = df_clean[target_column].values
         
-        # Create sequences for time series models
         X_sequences = []
         y_sequences = []
         
@@ -313,6 +307,10 @@ class FeatureEngineer:
         X_test = X_sequences[split_idx:]
         y_train = y_sequences[:split_idx]
         y_test = y_sequences[split_idx:]
+        
+        if X_train.shape[0] == 0:
+            logger.warning("No training samples created. Not enough data after preprocessing.")
+            return np.array([]), np.array([]), np.array([]), np.array([])
         
         logger.info(f"Prepared ML data: {X_train.shape[0]} training samples, {X_test.shape[0]} test samples")
         logger.info(f"Features: {X_train.shape[2]}, Target: {target_column}")
@@ -350,43 +348,4 @@ class FeatureEngineer:
             'close_sma_ratio': 'Current price relative to 20-day SMA',
         }
 
-
-# Global instance
 feature_engineer = FeatureEngineer()
-
-
-# Example usage
-def test_feature_engineering():
-    """Test the feature engineering service"""
-    # Create sample data
-    dates = pd.date_range('2023-01-01', periods=100, freq='D')
-    sample_data = pd.DataFrame({
-        'date': dates,
-        'open': np.random.uniform(100, 200, 100),
-        'high': np.random.uniform(150, 250, 100),
-        'low': np.random.uniform(50, 150, 100),
-        'close': np.random.uniform(100, 200, 100),
-        'volume': np.random.uniform(1000000, 5000000, 100),
-        'symbol': 'TEST'
-    })
-    
-    # Calculate features
-    engineer = FeatureEngineer()
-    features_df = engineer.calculate_technical_indicators(sample_data)
-    
-    # Add targets
-    features_df = engineer.create_target_variables(features_df)
-    
-    # Prepare ML data
-    X_train, X_test, y_train, y_test = engineer.prepare_ml_data(features_df)
-    
-    print(f"Feature engineering completed!")
-    print(f"Training samples: {X_train.shape}")
-    print(f"Test samples: {X_test.shape}")
-    print(f"Features: {X_train.shape[2]}")
-    
-    return features_df
-
-
-if __name__ == "__main__":
-    test_feature_engineering() 

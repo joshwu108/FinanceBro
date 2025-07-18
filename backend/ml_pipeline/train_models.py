@@ -40,9 +40,7 @@ class StockPredictionPipeline:
         ]
     
     async def run_complete_pipeline(self, symbols: list = None, period: str = "1y"):
-        """
-        Run the complete ML pipeline
-        
+        """"
         Args:
             symbols: List of stock symbols to train on
             period: Time period for data collection
@@ -50,30 +48,30 @@ class StockPredictionPipeline:
         if symbols is None:
             symbols = self.training_symbols
         
-        logger.info("🚀 Starting complete ML pipeline...")
+        logger.info("Starting complete ML pipeline...")
         logger.info(f"Training on {len(symbols)} symbols: {symbols}")
         
         # Step 1: Data Collection
-        logger.info("📊 Step 1: Collecting stock data...")
+        logger.info("Step 1: Collecting stock data...")
         stock_data = await self._collect_data(symbols, period)
         
         if not stock_data:
-            logger.error("❌ No data collected. Exiting pipeline.")
+            logger.error("No data collected. Exiting pipeline.")
             return
         
         # Step 2: Feature Engineering
-        logger.info("🔧 Step 2: Engineering features...")
+        logger.info("Step 2: Engineering features...")
         processed_data = self._engineer_features(stock_data)
         
         # Step 3: Model Training
-        logger.info("🤖 Step 3: Training ML models...")
+        logger.info("Step 3: Training ML models...")
         model_results = await self._train_models(processed_data)
         
         # Step 4: Model Evaluation
-        logger.info("📈 Step 4: Evaluating models...")
+        logger.info("Step 4: Evaluating models...")
         self._evaluate_models(model_results)
         
-        logger.info("✅ Pipeline completed successfully!")
+        logger.info("Pipeline completed successfully!")
         return model_results
     
     async def _collect_data(self, symbols: list, period: str) -> dict:
@@ -90,7 +88,7 @@ class StockPredictionPipeline:
                 if self.data_collector.validate_data(data):
                     self.data_collector.save_data(data, symbol, format="csv")
                     valid_data[symbol] = data
-                    logger.info(f"✅ {symbol}: {len(data)} records")
+                    logger.info(f"{symbol}: {len(data)} records")
                 else:
                     logger.warning(f"⚠️ {symbol}: Invalid data, skipping")
             
@@ -119,7 +117,7 @@ class StockPredictionPipeline:
                 features_df.to_csv(f"data/processed/{symbol}_features.csv", index=False)
                 
                 processed_data[symbol] = features_df
-                logger.info(f"✅ {symbol}: {len(features_df.columns)} features calculated")
+                logger.info(f"{symbol}: {len(features_df.columns)} features calculated")
                 
             except Exception as e:
                 logger.error(f"Error processing {symbol}: {str(e)}")
@@ -141,7 +139,7 @@ class StockPredictionPipeline:
                 )
                 
                 if len(X_train) < 100:  # Need sufficient data
-                    logger.warning(f"⚠️ {symbol}: Insufficient data ({len(X_train)} samples), skipping")
+                    logger.warning(f"{symbol}: Insufficient data ({len(X_train)} samples), skipping")
                     continue
                 
                 # Train different models
@@ -154,9 +152,9 @@ class StockPredictionPipeline:
                         model_name=f"{symbol}_rf", task="classification"
                     )
                     models_info['random_forest'] = rf_info
-                    logger.info(f"✅ {symbol} Random Forest: {rf_info['metrics']['accuracy']:.4f}")
+                    logger.info(f"{symbol} Random Forest: {rf_info['metrics']['accuracy']:.4f}")
                 except Exception as e:
-                    logger.error(f"❌ {symbol} Random Forest failed: {str(e)}")
+                    logger.error(f"{symbol} Random Forest failed: {str(e)}")
                 
                 # 2. XGBoost
                 try:
@@ -165,9 +163,9 @@ class StockPredictionPipeline:
                         model_name=f"{symbol}_xgb", task="classification"
                     )
                     models_info['xgboost'] = xgb_info
-                    logger.info(f"✅ {symbol} XGBoost: {xgb_info['metrics']['accuracy']:.4f}")
+                    logger.info(f"{symbol} XGBoost: {xgb_info['metrics']['accuracy']:.4f}")
                 except Exception as e:
-                    logger.error(f"❌ {symbol} XGBoost failed: {str(e)}")
+                    logger.error(f"{symbol} XGBoost failed: {str(e)}")
                 
                 # 3. LSTM (if we have enough data)
                 if len(X_train) >= 500:  # LSTM needs more data
@@ -177,9 +175,9 @@ class StockPredictionPipeline:
                             model_name=f"{symbol}_lstm", task="classification"
                         )
                         models_info['lstm'] = lstm_info
-                        logger.info(f"✅ {symbol} LSTM: {lstm_info['metrics']['accuracy']:.4f}")
+                        logger.info(f"{symbol} LSTM: {lstm_info['metrics']['accuracy']:.4f}")
                     except Exception as e:
-                        logger.error(f"❌ {symbol} LSTM failed: {str(e)}")
+                        logger.error(f"{symbol} LSTM failed: {str(e)}")
                 
                 model_results[symbol] = models_info
                 
@@ -198,7 +196,7 @@ class StockPredictionPipeline:
         all_results = []
         
         for symbol, models in model_results.items():
-            logger.info(f"\n📈 {symbol}:")
+            logger.info(f"\n{symbol}:")
             
             for model_name, info in models.items():
                 metrics = info['metrics']
@@ -243,16 +241,13 @@ async def main():
     symbols = ["AAPL", "GOOGL", "MSFT", "TSLA"]  # Start with fewer symbols for testing
     period = "6mo"  # Use 6 months for faster testing
     
-    logger.info("🎯 FinanceBro ML Pipeline")
-    logger.info("=" * 50)
-    
     # Run the complete pipeline
     results = await pipeline.run_complete_pipeline(symbols, period)
     
     if results:
         # Get final summary
         summary = pipeline.get_model_summary()
-        logger.info(f"\n📋 Final Summary: {summary['total_models']} models trained")
+        logger.info(f"\nFinal Summary: {summary['total_models']} models trained")
         
         # Show best performing models
         for model_name, info in summary['models'].items():
