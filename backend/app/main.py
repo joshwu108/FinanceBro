@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 import uvicorn
 from contextlib import asynccontextmanager
 
-from app.api import stocks, alerts, models, portfolio
+from app.routers import stocks
 from app.services.database import init_db
 from app.services.redis_client import init_redis
 
@@ -13,7 +13,7 @@ from app.services.redis_client import init_redis
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
-    print("🚀 Starting FinanceBro API...")
+    print("Starting FinanceBro API...")
     await init_db()
     await init_redis()
     print("Database and Redis initialized")
@@ -41,9 +41,9 @@ app.add_middleware(
 
 # Include routers
 app.include_router(stocks.router, prefix="/api/v1/stocks", tags=["stocks"])
-app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["alerts"])
-app.include_router(models.router, prefix="/api/v1/models", tags=["models"])
-app.include_router(portfolio.router, prefix="/api/v1/portfolio", tags=["portfolio"])
+#app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["alerts"])
+#app.include_router(models.router, prefix="/api/v1/models", tags=["models"])
+#app.include_router(portfolio.router, prefix="/api/v1/portfolio", tags=["portfolio"])
 
 
 @app.get("/")

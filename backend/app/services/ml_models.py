@@ -347,6 +347,16 @@ class MLModelManager:
         
         return model_info
     
+    def train_all_models(self, X_train, y_train, X_test, y_test, symbol, task):
+        """Train all models for a specific stock"""
+        self.train_random_forest(X_train, y_train, X_test, y_test, symbol, task)
+        self.train_xgboost(X_train, y_train, X_test, y_test, symbol, task)
+        self.train_lstm(X_train, y_train, X_test, y_test, symbol, task)
+
+        return {
+            self.models
+        }
+    
     def _calculate_metrics(
         self, 
         y_true: np.ndarray, 

@@ -32,10 +32,10 @@ async def init_db():
     """Initialize database tables"""
     try:
         # Import models to register them
-        from app.models.stock import Stock
-        from app.models.alert import Alert
-        from app.models.portfolio import Portfolio
-        from app.models.prediction import Prediction
+        #from app.routers.stocks import Stock
+        #from app.models.alert import Alert
+        #from app.models.portfolio import Portfolio
+        #from app.models.prediction import Prediction
         
         # Create tables
         Base.metadata.create_all(bind=engine)
