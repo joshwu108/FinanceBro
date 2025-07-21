@@ -143,9 +143,8 @@ class StockPredictionPipeline:
                     continue
                 
                 # Train different models
+
                 models_info = {}
-                
-                # 1. Random Forest
                 try:
                     rf_info = self.ml_manager.train_random_forest(
                         X_train, y_train, X_test, y_test,
@@ -155,8 +154,7 @@ class StockPredictionPipeline:
                     logger.info(f"{symbol} Random Forest: {rf_info['metrics']['accuracy']:.4f}")
                 except Exception as e:
                     logger.error(f"{symbol} Random Forest failed: {str(e)}")
-                
-                # 2. XGBoost
+                    
                 try:
                     xgb_info = self.ml_manager.train_xgboost(
                         X_train, y_train, X_test, y_test,
@@ -167,7 +165,6 @@ class StockPredictionPipeline:
                 except Exception as e:
                     logger.error(f"{symbol} XGBoost failed: {str(e)}")
                 
-                # 3. LSTM (if we have enough data)
                 if len(X_train) >= 500:  # LSTM needs more data
                     try:
                         lstm_info = self.ml_manager.train_lstm(
@@ -236,20 +233,14 @@ class StockPredictionPipeline:
 async def main():
     """Main function to run the pipeline"""
     pipeline = StockPredictionPipeline()
-    
-    # You can customize these parameters
+
     symbols = ["AAPL", "GOOGL", "MSFT", "TSLA"]  # Start with fewer symbols for testing
-    period = "6mo"  # Use 6 months for faster testing
-    
-    # Run the complete pipeline
+    period = "6mo" 
     results = await pipeline.run_complete_pipeline(symbols, period)
     
     if results:
-        # Get final summary
         summary = pipeline.get_model_summary()
         logger.info(f"\nFinal Summary: {summary['total_models']} models trained")
-        
-        # Show best performing models
         for model_name, info in summary['models'].items():
             metrics = info['metrics']
             accuracy = metrics.get('accuracy', metrics.get('r2', 'N/A'))
