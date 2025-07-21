@@ -1,0 +1,6 @@
+export { default as Homepage } from './homepage';
+export { default as Navbar } from './navbar';
+export { default as Dashboard } from './dashboard';
+export { default as Stocks } from './stocks';
+export { default as Portfolio } from './portfolio';
+export { default as Alerts } from './alerts'; 
