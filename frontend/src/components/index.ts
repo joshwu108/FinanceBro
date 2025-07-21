@@ -3,4 +3,5 @@ export { default as Navbar } from './navbar';
 export { default as Dashboard } from './dashboard';
 export { default as Stocks } from './stocks';
 export { default as Portfolio } from './portfolio';
-export { default as Alerts } from './alerts'; 
+export { default as Alerts } from './alerts';
+export { default as ApiTest } from './ApiTest'; 

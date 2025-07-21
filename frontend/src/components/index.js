@@ -4,6 +4,7 @@ import Dashboard from './dashboard';
 import Stocks from './stocks';
 import Portfolio from './portfolio';
 import Alerts from './alerts';
+import ApiTest from './ApiTest';
 
 
 export { 
@@ -12,5 +13,6 @@ export {
     Dashboard,
     Stocks,
     Portfolio,
-    Alerts
+    Alerts,
+    ApiTest
 };
