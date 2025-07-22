@@ -1,28 +1,296 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from app.services.data_collector import DataCollector
 from app.services.ml_models import MLModelManager
+from app.services.feature_engineering import FeatureEngineer
+from app.services.financial_analyzer import FinancialAnalyzer
 import numpy as np
+import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.get("/stocks")
+@router.get("/")
 async def get_stocks():
-    return ""
+    """Get list of available stocks"""
+    return {
+        "stocks": ["AAPL", "TSLA", "MSFT", "GOOGL", "AMZN", "NVDA"],
+        "message": "Available stocks for prediction"
+    }
 
-@router.get("/stocks/{symbol}")
+@router.get("/{symbol}")
 async def get_stock_data(symbol: str):
+    """Get stock data for a specific symbol"""
     try:
         data_collector = DataCollector()
-        stock_data = data_collector.get_stock_data(symbol)
-        return {"symbol": symbol, "data": stock_data}
+        stock_data = await data_collector.get_stock_data_yahoo(symbol, period="1y", interval="1d")
+        
+        # If Yahoo Finance fails, use sample data
+        if stock_data is None or stock_data.empty:
+            logger.warning(f"Yahoo Finance failed for {symbol}, using sample data")
+            stock_data = data_collector.get_sample_data(symbol)
+        
+        if stock_data is None or stock_data.empty:
+            raise HTTPException(status_code=404, detail=f"No data found for {symbol}")
+        
+        return {
+            "symbol": symbol,
+            "data_points": len(stock_data),
+            "columns": list(stock_data.columns),
+            "latest_price": float(stock_data['close'].iloc[-1]) if 'close' in stock_data.columns else None,
+            "data_source": "yahoo" if stock_data is not None and not stock_data.empty else "sample"
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=e)
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/predictions/{symbol}")
-async def get_stock_prediction(symbol: str, X: list):
+@router.get("/{symbol}/features")
+async def get_stock_features(symbol: str):
+    """Get engineered features for a stock"""
     try:
-        mm_manager = MLModelManager()
-        prediction = mm_manager.predict(symbol, X, return_probability=True)
-        return {"symbol": symbol, "prediction": prediction}
+        # Collect data
+        data_collector = DataCollector()
+        data = await data_collector.get_stock_data_yahoo(symbol, period="1y", interval="1d")
+        
+        if data is None or data.empty:
+            raise HTTPException(status_code=404, detail=f"No data found for {symbol}")
+        
+        # Engineer features
+        engineer = FeatureEngineer()
+        features = engineer.engineer_features(data)
+        
+        if features is None or features.empty:
+            raise HTTPException(status_code=500, detail="Failed to engineer features")
+        
+        return {
+            "symbol": symbol,
+            "features_count": features.shape[1],
+            "samples_count": features.shape[0],
+            "feature_names": list(features.columns)
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{symbol}/predict")
+async def get_stock_prediction(
+    symbol: str, 
+    model: str = Query("random_forest", description="Model to use for prediction")
+):
+    """Get prediction for a stock"""
+    try:
+        # Collect and engineer data
+        data_collector = DataCollector()
+        data = await data_collector.get_stock_data_yahoo(symbol, period="1y", interval="1d")
+        
+        if data is None or data.empty:
+            raise HTTPException(status_code=404, detail=f"No data found for {symbol}")
+        
+        engineer = FeatureEngineer()
+        features_df = engineer.calculate_technical_indicators(data)
+        features_df = engineer.create_target_variables(features_df)
+        if features_df is None or features_df.empty:
+            raise HTTPException(status_code=500, detail="Failed to engineer features")
+        
+        
+        ml_manager = MLModelManager()
+
+        X_train, X_test, y_train, y_test = engineer.prepare_ml_data(
+            features_df, target_column='target_direction_1d', test_size=0.2, sequence_length=3
+        )
+
+        X_train_flat = X_train.reshape(X_train.shape[0], -1)
+        X_test_flat = X_test.reshape(X_test.shape[0], -1)
+
+        # Train the model with the same name that will be used for prediction
+        model_name = f"{symbol}_{model}"
+        ml_manager.train_random_forest(
+            X_train_flat, y_train, X_test_flat, y_test, 
+            model_name=model_name, task="classification"
+        )
+        
+        # Get latest features for prediction
+        latest_features = X_train_flat[-1:].reshape(1, -1)
+        prediction = ml_manager.predict(model_name, latest_features, return_probability=True)
+        logger.info(f"Successfully predicted stock: {prediction}")
+        
+        # Handle prediction result
+        if prediction is not None and len(prediction) > 0:
+            if len(prediction.shape) > 1 and prediction.shape[1] > 1:
+                # Classification with probabilities
+                pred_value = float(prediction[0][1])  # Probability of positive class
+                confidence = "high" if abs(pred_value - 0.5) > 0.2 else "medium" if abs(pred_value - 0.5) > 0.1 else "low"
+            else:
+                # Regression or single value
+                pred_value = float(prediction[0])
+                confidence = "high" if abs(pred_value) > 0.7 else "medium" if abs(pred_value) > 0.5 else "low"
+        else:
+            pred_value = None
+            confidence = "unknown"
+        
+        return {
+            "symbol": symbol,
+            "model": model,
+            "prediction": pred_value,
+            "confidence": confidence,
+            "model_trained": model_name in ml_manager.models,
+            "model_name": model_name
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{symbol}/analyze")
+async def get_stock_analysis(
+    symbol: str, 
+    model: str = Query("random_forest", description="Model to use for prediction")
+):
+    """Get comprehensive stock analysis including trend and trading advice"""
+    try:
+        # Collect and engineer data
+        data_collector = DataCollector()
+        stock_data = await data_collector.get_stock_data_yahoo(symbol, period="1y", interval="1d")
+        
+        if stock_data is None or stock_data.empty:
+            raise HTTPException(status_code=404, detail=f"No data found for {symbol}")
+        
+        engineer = FeatureEngineer()
+        technical_indicators = engineer.calculate_technical_indicators(stock_data)
+        features_df = engineer.create_target_variables(technical_indicators)
+        
+        if features_df is None or features_df.empty:
+            raise HTTPException(status_code=500, detail="Failed to engineer features")
+        
+        # Train model and get prediction
+        ml_manager = MLModelManager()
+        model_name = f"{symbol}_{model}"
+        
+        X_train, X_test, y_train, y_test = engineer.prepare_ml_data(
+            features_df, target_column='target_direction_1d', test_size=0.2, sequence_length=3
+        )
+        
+        X_train_flat = X_train.reshape(X_train.shape[0], -1)
+        X_test_flat = X_test.reshape(X_test.shape[0], -1)
+        
+        # Train the model
+        ml_manager.train_random_forest(
+            X_train_flat, y_train, X_test_flat, y_test, 
+            model_name=model_name, task="classification"
+        )
+        
+        # Get prediction
+        latest_features = X_train_flat[-1:].reshape(1, -1)
+        prediction = ml_manager.predict(model_name, latest_features, return_probability=True)
+        
+        # Extract prediction value
+        if prediction is not None and len(prediction) > 0:
+            if len(prediction.shape) > 1 and prediction.shape[1] > 1:
+                ml_prediction = float(prediction[0][1])  # Probability of positive class
+            else:
+                ml_prediction = float(prediction[0])
+        else:
+            ml_prediction = 0.5
+        
+        # Analyze trend and generate advice
+        financial_analyzer = FinancialAnalyzer()
+        
+        trend_analysis = financial_analyzer.analyze_trend(
+            stock_data, technical_indicators, ml_prediction, symbol
+        )
+        
+        trading_advice = financial_analyzer.generate_trading_advice(
+            trend_analysis, stock_data, technical_indicators, ml_prediction, symbol
+        )
+        
+        # Get market sentiment
+        sentiment = financial_analyzer.get_market_sentiment(symbol)
+        
+        return {
+            "symbol": symbol,
+            "current_price": float(stock_data['close'].iloc[-1]),
+            "analysis_date": stock_data.index[-1].isoformat() if hasattr(stock_data.index[-1], 'isoformat') else str(stock_data.index[-1]),
+            
+            "ml_prediction": {
+                "model": model,
+                "probability": ml_prediction,
+                "confidence": "high" if abs(ml_prediction - 0.5) > 0.2 else "medium" if abs(ml_prediction - 0.5) > 0.1 else "low"
+            },
+            
+            "trend_analysis": {
+                "trend": trend_analysis.trend,
+                "confidence": trend_analysis.confidence,
+                "strength": trend_analysis.strength,
+                "duration": trend_analysis.duration,
+                "key_levels": trend_analysis.key_levels,
+                "reasoning": trend_analysis.reasoning
+            },
+            
+            "trading_advice": {
+                "action": trading_advice.action,
+                "confidence": trading_advice.confidence,
+                "risk_level": trading_advice.risk_level,
+                "target_price": trading_advice.target_price,
+                "stop_loss": trading_advice.stop_loss,
+                "timeframe": trading_advice.timeframe,
+                "reasoning": trading_advice.reasoning
+            },
+            
+            "market_sentiment": sentiment,
+            
+            "technical_indicators": {
+                "rsi": float(technical_indicators['rsi'].iloc[-1]) if 'rsi' in technical_indicators.columns else None,
+                "macd": float(technical_indicators['macd'].iloc[-1]) if 'macd' in technical_indicators.columns else None,
+                "sma_20": float(technical_indicators['sma_20'].iloc[-1]) if 'sma_20' in technical_indicators.columns else None,
+                "sma_50": float(technical_indicators['sma_50'].iloc[-1]) if 'sma_50' in technical_indicators.columns else None,
+                "volume": float(stock_data['volume'].iloc[-1]) if 'volume' in stock_data.columns else None
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error analyzing {symbol}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{symbol}/train")
+async def train_stock_models(symbol: str):
+    """Train models for a specific stock"""
+    try:
+        # Collect data
+        data_collector = DataCollector()
+        data = await data_collector.get_stock_data_yahoo(symbol, period="1y", interval="1d")
+        
+        if data is None or data.empty:
+            raise HTTPException(status_code=404, detail=f"No data found for {symbol}")
+        
+        # Engineer features
+        engineer = FeatureEngineer()
+        features = engineer.engineer_features(data)
+        
+        if features is None or features.empty:
+            raise HTTPException(status_code=500, detail="Failed to engineer features")
+        
+        # Prepare data
+        X = features.drop(['target'], axis=1, errors='ignore')
+        y = features['target'] if 'target' in features.columns else features.iloc[:, -1]
+        
+        # Split data
+        split_idx = int(len(X) * 0.8)
+        X_train, X_test = X[:split_idx], X[split_idx:]
+        y_train, y_test = y[:split_idx], y[split_idx:]
+        
+        # Train models
+        ml_manager = MLModelManager()
+        results = ml_manager.train_all_models_for_stock(
+            X_train.values, y_train.values, 
+            X_test.values, y_test.values,
+            symbol=symbol,
+            task="classification"
+        )
+        
+        return {
+            "symbol": symbol,
+            "training_completed": results['success'],
+            "models_trained": list(results['models_trained'].keys()),
+            "message": f"Training completed for {symbol}"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -22,7 +22,7 @@ async def test_single_stock():
     ml_manager = MLModelManager()
     
     # Test with Apple stock
-    symbol = "MLGO"
+    symbol = "GOOGL"
     period = "3y"  # 6 months for more data
     
     print(f"Collecting data for {symbol}...")
