@@ -2,7 +2,7 @@ import React from 'react';
 import logo from './logo.svg';
 import './index.css';
 import './App.css';
-import { Homepage, Navbar, Dashboard, Stocks, Portfolio, Alerts, ApiTest } from './components';
+import { Homepage, Navbar, Dashboard, Stocks, Portfolio, Alerts, ApiTest, StockPredictorTest } from './components';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 function App() {
@@ -16,7 +16,7 @@ function App() {
           <Route path='/stocks' element={<Stocks />} />
           <Route path='/portfolio' element={<Portfolio />} />
           <Route path='/alerts' element={<Alerts />} />
-          <Route path='/test' element={<ApiTest />} />
+          <Route path='/test' element={<><ApiTest /><StockPredictorTest /></>} />
         </Routes>
       </Router>
     </div>
