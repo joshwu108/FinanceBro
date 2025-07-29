@@ -1,182 +1,330 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import apiService, { PortfolioData, PortfolioDetails } from '../services/api';
 
 const Portfolio = () => {
-    const holdings = [
-        { symbol: 'AAPL', name: 'Apple Inc.', shares: 50, avgPrice: 165.20, currentPrice: 175.43, totalValue: 8771.50, gainLoss: 511.50, gainLossPercent: 6.2 },
-        { symbol: 'TSLA', name: 'Tesla Inc.', shares: 25, avgPrice: 235.80, currentPrice: 242.12, totalValue: 6053.00, gainLoss: 158.00, gainLossPercent: 2.7 },
-        { symbol: 'MSFT', name: 'Microsoft Corp.', shares: 30, avgPrice: 298.50, currentPrice: 312.67, totalValue: 9380.10, gainLoss: 425.10, gainLossPercent: 4.7 },
-        { symbol: 'GOOGL', name: 'Alphabet Inc.', shares: 15, avgPrice: 138.90, currentPrice: 142.56, totalValue: 2138.40, gainLoss: 54.90, gainLossPercent: 2.6 },
-        { symbol: 'NVDA', name: 'NVIDIA Corp.', shares: 10, avgPrice: 470.00, currentPrice: 485.23, totalValue: 4852.30, gainLoss: 152.30, gainLossPercent: 3.2 },
-    ];
+    const [portfolios, setPortfolios] = useState<PortfolioData[]>([]);
+    const [selectedPortfolio, setSelectedPortfolio] = useState<PortfolioDetails | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [holding, setHolding] = useState<string | null>(null);
+    const [showAddHolding, setShowAddHolding] = useState(false);
 
-    const totalValue = holdings.reduce((sum, holding) => sum + holding.totalValue, 0);
-    const totalGainLoss = holdings.reduce((sum, holding) => sum + holding.gainLoss, 0);
-    const totalGainLossPercent = (totalGainLoss / (totalValue - totalGainLoss)) * 100;
+    useEffect(() => {
+        loadPortfolios();
+    }, []);
+
+    const loadPortfolios = async () => {
+        try {
+            setLoading(true);
+            const response = await apiService.getPortfolios();
+            setPortfolios(response.portfolios);
+        } catch (error) {
+            setError(error instanceof Error ? error.message : 'An error occurred while loading portfolios');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const loadPortfolioDetails = async (Id: number) => {
+        try {
+            setLoading(true);
+            const details = await apiService.getPortfolioDetails(Id);
+            setSelectedPortfolio(details);
+        } catch (error) {
+            setError(error instanceof Error ? error.message : 'An error occurred while loading portfolio details');
+            console.error(error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const createPortfolio = async (name: string, description? : string, userId?: number) => {
+        try {
+            setLoading(true);
+            await apiService.createPortfolio(name, description, userId);
+            await loadPortfolios();
+        } catch (error) {
+            setError(error instanceof Error ? error.message : 'An error occurred while creating portfolio');
+            console.error(error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const addHolding = async (portfolioId: number, stockSymbol: string, shares: number, averagePrice: number, purchaseDate?: string) => {
+        try {
+            setLoading(true);
+            await apiService.addHolding(portfolioId, stockSymbol, shares, averagePrice, purchaseDate);
+            await loadPortfolioDetails(portfolioId);
+        } catch (error) {
+            setError(error instanceof Error ? error.message : 'An error occurred while adding holding');
+            console.error(error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
+
+    // Add this to your portfolio component
+    useEffect(() => {
+        if (selectedPortfolio) {
+        const interval = setInterval(() => {
+            loadPortfolioDetails(selectedPortfolio.portfolio.id);
+        }, 30000); // Refresh every 30 seconds
+        
+        return () => clearInterval(interval);
+        }
+    }, [selectedPortfolio]);
+
+    if (loading) return <div>Loading...</div>;
+    if (error) return <div>Error: {error}</div>;
 
     return (
-        <div className='min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6'>
-            <div className='max-w-7xl mx-auto'>
-                {/* Header */}
-                <div className='mb-8'>
-                    <h1 className='text-4xl font-bold text-gray-800 mb-2'>Portfolio</h1>
-                    <p className='text-gray-600'>Manage your investments and track performance</p>
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6">
+            <div className="max-w-7xl mx-auto">
+                <h1 className="text-4xl font-bold text-gray-800 mb-8">Portfolio Management</h1>
+            
+                {/* Portfolio List */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                    {portfolios.map((portfolio) => (
+                        <div key={portfolio.id} className="bg-white p-6 rounded-lg shadow-md">
+                            <h3 className="text-xl font-semibold text-gray-800 mb-2">{portfolio.name}</h3>
+                            <p className="text-gray-600 mb-4">{portfolio.description}</p>
+                            <div className="space-y-2">
+                                <p className="text-2xl font-bold text-green-600">${portfolio.total_value.toLocaleString()}</p>
+                                <p className={`text-sm ${portfolio.total_return_percent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                    {portfolio.total_return_percent >= 0 ? '+' : ''}{portfolio.total_return_percent.toFixed(2)}%
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => loadPortfolioDetails(portfolio.id)}
+                                className="mt-4 w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+                            >
+                                View Details
+                            </button>
+                        </div>
+                    ))}
+                </div>
+                {/* Create Portfolio Form */}
+                <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+                    <h2 className="text-2xl font-bold text-gray-800 mb-4">Create New Portfolio</h2>
+                    <form onSubmit={(e) => {
+                        e.preventDefault();
+                        const formData = new FormData(e.currentTarget);
+                        createPortfolio(
+                            formData.get('name') as string,
+                            formData.get('description') as string
+                        );
+                    }}>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <input
+                            name="name"
+                            type="text"
+                            placeholder="Portfolio Name"
+                            className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            required
+                        />
+                        <input
+                            name="description"
+                            type="text"
+                            placeholder="Description (optional)"
+                            className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                    </div>
+                    <button
+                        type="submit"
+                        className="mt-4 bg-green-600 text-white py-2 px-6 rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                        Create Portfolio
+                    </button>
+                    </form>
                 </div>
 
-                {/* Portfolio Summary */}
-                <div className='grid grid-cols-1 md:grid-cols-4 gap-6 mb-8'>
-                    <div className='bg-white p-6 rounded-lg shadow-md'>
-                        <h3 className='text-sm font-medium text-gray-500 mb-2'>Total Value</h3>
-                        <p className='text-3xl font-bold text-gray-800'>${totalValue.toLocaleString()}</p>
-                        <p className={`text-sm ${totalGainLoss >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            {totalGainLoss >= 0 ? '+' : ''}${totalGainLoss.toLocaleString()} ({totalGainLossPercent.toFixed(1)}%)
+                {/* Portfolio Details */}
+                {selectedPortfolio && (
+                    <div className="bg-white p-6 rounded-lg shadow-md">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-2xl font-bold text-gray-800">
+                                {selectedPortfolio.portfolio.name} - Details
+                            </h2>
+                            <button
+                                onClick={() => setShowAddHolding(true)}
+                                className="bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors"
+                            >
+                                Add Holding
+                            </button>
+                        </div>
+            
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                            <div className="text-center">
+                                <p className="text-sm text-gray-500">Total Value</p>
+                                <p className="text-2xl font-bold text-green-600">
+                                    ${selectedPortfolio.portfolio.total_value.toLocaleString()}
+                                </p>
+                            </div>
+                        <div className="text-center">
+                        <p className="text-sm text-gray-500">Total Return</p>
+                        <p className={`text-2xl font-bold ${selectedPortfolio.portfolio.total_return >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            ${selectedPortfolio.portfolio.total_return.toLocaleString()}
                         </p>
                     </div>
-                    <div className='bg-white p-6 rounded-lg shadow-md'>
-                        <h3 className='text-sm font-medium text-gray-500 mb-2'>Total Cost</h3>
-                        <p className='text-3xl font-bold text-gray-800'>${(totalValue - totalGainLoss).toLocaleString()}</p>
-                        <p className='text-sm text-gray-500'>Average cost basis</p>
-                    </div>
-                    <div className='bg-white p-6 rounded-lg shadow-md'>
-                        <h3 className='text-sm font-medium text-gray-500 mb-2'>Holdings</h3>
-                        <p className='text-3xl font-bold text-gray-800'>{holdings.length}</p>
-                        <p className='text-sm text-gray-500'>Different stocks</p>
-                    </div>
-                    <div className='bg-white p-6 rounded-lg shadow-md'>
-                        <h3 className='text-sm font-medium text-gray-500 mb-2'>Best Performer</h3>
-                        <p className='text-3xl font-bold text-green-600'>AAPL</p>
-                        <p className='text-sm text-green-500'>+6.2%</p>
-                    </div>
-                </div>
-
-                {/* Portfolio Chart Placeholder */}
-                <div className='bg-white rounded-lg shadow-md p-6 mb-8'>
-                    <h2 className='text-2xl font-bold text-gray-800 mb-4'>Performance Chart</h2>
-                    <div className='h-64 bg-gray-100 rounded-lg flex items-center justify-center'>
-                        <p className='text-gray-500'>Chart component will be added here</p>
+                    <div className="text-center">
+                        <p className="text-sm text-gray-500">Return %</p>
+                        <p className={`text-2xl font-bold ${selectedPortfolio.portfolio.total_return_percent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {selectedPortfolio.portfolio.total_return_percent.toFixed(2)}%
+                        </p>
                     </div>
                 </div>
 
                 {/* Holdings Table */}
-                <div className='bg-white rounded-lg shadow-md overflow-hidden'>
-                    <div className='px-6 py-4 border-b border-gray-200 flex justify-between items-center'>
-                        <h2 className='text-2xl font-bold text-gray-800'>Holdings</h2>
-                        <button className='bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors'>
-                            Add Stock
-                        </button>
-                    </div>
-                    <div className='overflow-x-auto'>
-                        <table className='w-full'>
-                            <thead className='bg-gray-50'>
-                                <tr>
-                                    <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>Stock</th>
-                                    <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider'>Shares</th>
-                                    <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider'>Avg Price</th>
-                                    <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider'>Current Price</th>
-                                    <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider'>Total Value</th>
-                                    <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider'>Gain/Loss</th>
-                                    <th className='px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider'>Actions</th>
+                <div className="overflow-x-auto">
+                    <table className="w-full">
+                        <thead>
+                            <tr className="border-b border-gray-200">
+                                <th className="text-left py-3 px-4">Symbol</th>
+                                <th className="text-right py-3 px-4">Shares</th>
+                                <th className="text-right py-3 px-4">Avg Price</th>
+                                <th className="text-right py-3 px-4">Current Price</th>
+                                <th className="text-right py-3 px-4">Current Value</th>
+                                <th className="text-right py-3 px-4">Return</th>
+                                <th className="text-right py-3 px-4">Return %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {selectedPortfolio.holdings.map((holding) => (
+                                <tr key={holding.id} className="border-b border-gray-100">
+                                    <td className="py-3 px-4 font-semibold">{holding.stock_symbol}</td>
+                                    <td className="text-right py-3 px-4">{holding.shares.toLocaleString()}</td>
+                                    <td className="text-right py-3 px-4">${holding.average_price.toFixed(2)}</td>
+                                    <td className="text-right py-3 px-4">
+                                        ${holding.current_price?.toFixed(2) || 'N/A'}
+                                    </td>
+                                    <td className="text-right py-3 px-4">
+                                        ${holding.current_value?.toLocaleString() || 'N/A'}
+                                    </td>
+                                    <td className={`text-right py-3 px-4 ${holding.total_return >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        ${holding.total_return.toLocaleString()}
+                                    </td>
+                                    <td className={`text-right py-3 px-4 ${holding.total_return_percent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        {holding.total_return_percent.toFixed(2)}%
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody className='bg-white divide-y divide-gray-200'>
-                                {holdings.map((holding, index) => (
-                                    <tr key={index} className='hover:bg-gray-50'>
-                                        <td className='px-6 py-4 whitespace-nowrap'>
-                                            <div className='flex items-center'>
-                                                <div className='w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold'>
-                                                    {holding.symbol.charAt(0)}
-                                                </div>
-                                                <div className='ml-3'>
-                                                    <div className='text-sm font-bold text-gray-900'>{holding.symbol}</div>
-                                                    <div className='text-sm text-gray-500'>{holding.name}</div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className='px-6 py-4 whitespace-nowrap text-right'>
-                                            <div className='text-sm text-gray-900'>{holding.shares}</div>
-                                        </td>
-                                        <td className='px-6 py-4 whitespace-nowrap text-right'>
-                                            <div className='text-sm text-gray-900'>${holding.avgPrice}</div>
-                                        </td>
-                                        <td className='px-6 py-4 whitespace-nowrap text-right'>
-                                            <div className='text-sm font-semibold text-gray-900'>${holding.currentPrice}</div>
-                                        </td>
-                                        <td className='px-6 py-4 whitespace-nowrap text-right'>
-                                            <div className='text-sm font-semibold text-gray-900'>${holding.totalValue.toLocaleString()}</div>
-                                        </td>
-                                        <td className='px-6 py-4 whitespace-nowrap text-right'>
-                                            <div className={`text-sm font-medium ${
-                                                holding.gainLoss >= 0 ? 'text-green-600' : 'text-red-600'
-                                            }`}>
-                                                {holding.gainLoss >= 0 ? '+' : ''}${holding.gainLoss.toFixed(2)} ({holding.gainLossPercent.toFixed(1)}%)
-                                            </div>
-                                        </td>
-                                        <td className='px-6 py-4 whitespace-nowrap text-center'>
-                                            <div className='flex justify-center space-x-2'>
-                                                <button className='bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 transition-colors'>
-                                                    Buy
-                                                </button>
-                                                <button className='bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors'>
-                                                    Sell
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                {/* Portfolio Allocation */}
-                <div className='mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8'>
-                    <div className='bg-white rounded-lg shadow-md p-6'>
-                        <h2 className='text-2xl font-bold text-gray-800 mb-4'>Sector Allocation</h2>
-                        <div className='space-y-4'>
-                            <div className='flex justify-between items-center'>
-                                <span className='text-sm text-gray-600'>Technology</span>
-                                <span className='text-sm font-semibold text-gray-800'>65%</span>
-                            </div>
-                            <div className='w-full bg-gray-200 rounded-full h-2'>
-                                <div className='bg-blue-600 h-2 rounded-full' style={{width: '65%'}}></div>
-                            </div>
-                            <div className='flex justify-between items-center'>
-                                <span className='text-sm text-gray-600'>Automotive</span>
-                                <span className='text-sm font-semibold text-gray-800'>15%</span>
-                            </div>
-                            <div className='w-full bg-gray-200 rounded-full h-2'>
-                                <div className='bg-green-600 h-2 rounded-full' style={{width: '15%'}}></div>
-                            </div>
-                            <div className='flex justify-between items-center'>
-                                <span className='text-sm text-gray-600'>Other</span>
-                                <span className='text-sm font-semibold text-gray-800'>20%</span>
-                            </div>
-                            <div className='w-full bg-gray-200 rounded-full h-2'>
-                                <div className='bg-purple-600 h-2 rounded-full' style={{width: '20%'}}></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className='bg-white rounded-lg shadow-md p-6'>
-                        <h2 className='text-2xl font-bold text-gray-800 mb-4'>AI Recommendations</h2>
-                        <div className='space-y-4'>
-                            <div className='bg-green-50 p-4 rounded-lg border-l-4 border-green-500'>
-                                <h3 className='font-semibold text-green-800 mb-1'>Buy More AAPL</h3>
-                                <p className='text-sm text-green-700'>Strong momentum and positive technical indicators</p>
-                            </div>
-                            <div className='bg-yellow-50 p-4 rounded-lg border-l-4 border-yellow-500'>
-                                <h3 className='font-semibold text-yellow-800 mb-1'>Hold TSLA</h3>
-                                <p className='text-sm text-yellow-700'>Wait for better entry point</p>
-                            </div>
-                            <div className='bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500'>
-                                <h3 className='font-semibold text-blue-800 mb-1'>Consider NVDA</h3>
-                                <p className='text-sm text-blue-700'>AI sector growth potential</p>
-                            </div>
-                        </div>
-                    </div>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
             </div>
+            )}
+            
+            {/* Add Holding Modal for Portfolio Details */}
+            {showAddHolding && selectedPortfolio && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-md bg-black bg-opacity-50">
+                    <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-xl font-bold text-gray-800">Add New Holding to {selectedPortfolio.portfolio.name}</h3>
+                            <button
+                                onClick={() => setShowAddHolding(false)}
+                                className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+                            >
+                                ×
+                            </button>
+                        </div>
+                        
+                        <form onSubmit={(e) => {
+                            e.preventDefault();
+                            const formData = new FormData(e.currentTarget);
+                            addHolding(
+                                selectedPortfolio.portfolio.id,
+                                formData.get('stockSymbol') as string,
+                                Number(formData.get('shares')),
+                                Number(formData.get('averagePrice')),
+                                formData.get('purchaseDate') as string
+                            );
+                            setShowAddHolding(false);
+                        }}>
+                            <div className="space-y-4">
+                                <div>
+                                    <label htmlFor="stockSymbol" className="block text-sm font-medium text-gray-700 mb-1">
+                                        Stock Symbol
+                                    </label>
+                                    <input
+                                        id="stockSymbol"
+                                        name="stockSymbol"
+                                        type="text"
+                                        placeholder="e.g., AAPL"
+                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        required
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label htmlFor="shares" className="block text-sm font-medium text-gray-700 mb-1">
+                                        Number of Shares
+                                    </label>
+                                    <input
+                                        id="shares"
+                                        name="shares"
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        placeholder="e.g., 10"
+                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        required
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label htmlFor="averagePrice" className="block text-sm font-medium text-gray-700 mb-1">
+                                        Average Price per Share
+                                    </label>
+                                    <input
+                                        id="averagePrice"
+                                        name="averagePrice"
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        placeholder="e.g., 150.00"
+                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        required
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label htmlFor="purchaseDate" className="block text-sm font-medium text-gray-700 mb-1">
+                                        Purchase Date
+                                    </label>
+                                    <input
+                                        id="purchaseDate"
+                                        name="purchaseDate"
+                                        type="date"
+                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div className="flex space-x-3 mt-6">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAddHolding(false)}
+                                    className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+                                >
+                                    Add Holding
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
+    </div>  
     );
 };
 
-export default Portfolio; 
+export default Portfolio;
