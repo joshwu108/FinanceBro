@@ -1,9 +1,9 @@
 from sqlalchemy import create_engine, MetaData
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 import os
 from typing import Optional
+from app.models.base import Base
 
 # Database configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./financebro.db")
@@ -21,9 +21,6 @@ else:
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Create base class for models
-Base = declarative_base()
-
 # Metadata for migrations
 metadata = MetaData()
 
@@ -31,11 +28,8 @@ metadata = MetaData()
 async def init_db():
     """Initialize database tables"""
     try:
-        # Import models to register them
-        #from app.routers.stocks import Stock
-        #from app.models.alert import Alert
-        #from app.models.portfolio import Portfolio
-        #from app.models.prediction import Prediction
+        # Import all models to register them
+        from app.models import Base, Stock, Portfolio, PortfolioHolding, Alert, Prediction, ModelPerformance, User
         
         # Create tables
         Base.metadata.create_all(bind=engine)
