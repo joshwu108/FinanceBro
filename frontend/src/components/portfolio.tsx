@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import apiService, { PortfolioData, PortfolioDetails } from '../services/api';
+import websocketService from '../services/websocket';
 
 const Portfolio = () => {
     const [portfolios, setPortfolios] = useState<PortfolioData[]>([]);
@@ -12,6 +13,50 @@ const Portfolio = () => {
     useEffect(() => {
         loadPortfolios();
     }, []);
+
+    useEffect(() => {
+        if (selectedPortfolio) {
+            websocketService.connect('/ws/portfolio', (data: any) => {
+                console.log('Received portfolio update:', data);
+                if (data.type === 'portfolio_update' && data.portfolio_id === selectedPortfolio?.portfolio.id) {
+                    setSelectedPortfolio(prev => {
+                        if (prev) {
+                            return {
+                                ...prev,
+                                holdings: data.holdings,
+                            };
+                        }
+                        return prev;
+                    })
+                }
+                if (data.type === 'price_update') {
+                    setSelectedPortfolio(prev => {
+                        if (prev) {
+                            const updatedHoldings = prev.holdings.map(holding => {
+                                if (holding.stock_symbol === data.symbol) {
+                                    return {
+                                        ...holding,
+                                        current_price: data.price,
+                                    };
+                                }
+                                return holding;
+                            });
+
+                            return {
+                                ...prev,
+                                holdings: updatedHoldings,
+                            };
+                        }
+                        return prev;
+                    });
+                }
+            });
+
+            return () => {
+                websocketService.disconnect();
+            };
+        }
+    }, [selectedPortfolio]);
 
     const loadPortfolios = async () => {
         try {

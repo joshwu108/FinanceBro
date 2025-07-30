@@ -2,6 +2,8 @@ import './index.css';
 import './App.css';
 import { Homepage, Navbar, Dashboard, Stocks, Portfolio, Alerts, ApiTest, StockPredictorTest } from './components';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 function App() {
     return (
@@ -17,6 +19,18 @@ function App() {
                     <Route path='/test' element={<><ApiTest /><StockPredictorTest /></>} />
                 </Routes>
             </Router>
+            <ToastContainer
+                position="top-right"
+                autoClose={5000}
+                hideProgressBar={false}
+                newestOnTop={false}
+                closeOnClick
+                rtl={false}
+                pauseOnFocusLoss
+                draggable
+                pauseOnHover
+                theme="light"
+            />
         </div>
     );
 }
