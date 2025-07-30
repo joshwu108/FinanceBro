@@ -3,10 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
 from contextlib import asynccontextmanager
+import asyncio
 
-from app.routers import stocks, alerts, portfolio
+from app.routers import stocks, alerts, portfolio, websocket
 from app.services.database import init_db
 from app.services.redis_client import init_redis
+from app.services.price_broadcaster import price_broadcaster
 
 
 @asynccontextmanager
@@ -18,9 +20,14 @@ async def lifespan(app: FastAPI):
     await init_redis()
     print("Database and Redis initialized")
     
+    # Start price broadcaster
+    asyncio.create_task(price_broadcaster.start())
+    print("Price broadcaster started")
+    
     yield
     # Shutdown
     print("Shutting down FinanceBro API...")
+    await price_broadcaster.stop()
 
 
 app = FastAPI(
@@ -43,6 +50,7 @@ app.add_middleware(
 app.include_router(stocks.router, prefix="/api/v1/stocks", tags=["stocks"])
 app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["alerts"])
 app.include_router(portfolio.router, prefix="/api/v1/portfolio", tags=["portfolio"])
+app.include_router(websocket.router, tags=["websocket"])
 #app.include_router(models.router, prefix="/api/v1/models", tags=["models"])
 
 

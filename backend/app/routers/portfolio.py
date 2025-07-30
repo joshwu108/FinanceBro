@@ -7,6 +7,7 @@ import logging
 from app.services.database import get_db
 from app.models.portfolio import Portfolio, PortfolioHolding
 from app.services.data_collector import DataCollector
+from app.services.price_broadcaster import price_broadcaster
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -191,6 +192,9 @@ async def add_holding(
         db.add(holding)
         db.commit()
         db.refresh(holding)
+        
+        # Trigger portfolio update via WebSocket
+        await price_broadcaster.broadcast_portfolio_update(portfolio_id)
         
         return {
             "id": holding.id,
