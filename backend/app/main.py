@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
     await init_redis()
     print("Database and Redis initialized")
     
-    # Start price broadcaster
+    # Start price broadcaster for real time communication with stock data
     asyncio.create_task(price_broadcaster.start())
     print("Price broadcaster started")
     

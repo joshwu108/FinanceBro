@@ -10,6 +10,8 @@ import asyncio
 import logging
 from typing import Dict, List, Optional, Tuple
 import os
+import time
+import random
 from alpha_vantage.timeseries import TimeSeries
 
 # Configure logging
@@ -22,49 +24,75 @@ class DataCollector:
     def __init__(self):
         self.alpha_vantage_key = os.getenv("ALPHA_VANTAGE_API_KEY")
         self.cache = {}  # Simple in-memory cache
+        self.last_request_time = 0
+        self.min_request_interval = 1.0  # Minimum 1 second between requests
         
+    async def _rate_limit(self):
+        """Ensure minimum time between requests to avoid rate limiting"""
+        current_time = time.time()
+        time_since_last = current_time - self.last_request_time
+        if time_since_last < self.min_request_interval:
+            sleep_time = self.min_request_interval - time_since_last
+            await asyncio.sleep(sleep_time)
+        self.last_request_time = time.time()
+    
     async def get_stock_data_yahoo(
         self, 
         symbol: str, 
         period: str = "1y",
-        interval: str = "1d"
+        interval: str = "1d",
+        max_retries: int = 3
     ) -> Optional[pd.DataFrame]:
         """
-        Fetch stock data from Yahoo Finance
+        Fetch stock data from Yahoo Finance with retry logic
         
         Args:
             symbol: Stock symbol (e.g., 'AAPL')
             period: Time period ('1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max')
             interval: Data interval ('1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h', '1d', '5d', '1wk', '1mo', '3mo')
+            max_retries: Maximum number of retry attempts
         
         Returns:
             DataFrame with OHLCV data
         """
-        try:
-            logger.info(f"Fetching data for {symbol} from Yahoo Finance")
-            
-            ticker = yf.Ticker(symbol)
-            data = ticker.history(period=period, interval=interval)
-            
-            if data.empty:
-                logger.warning(f"No data found for {symbol}")
+        for attempt in range(max_retries):
+            try:
+                await self._rate_limit()
+                logger.info(f"Fetching data for {symbol} from Yahoo Finance (attempt {attempt + 1})")
+                
+                # Add random delay to avoid synchronized requests
+                await asyncio.sleep(random.uniform(0.1, 0.5))
+                
+                ticker = yf.Ticker(symbol)
+                data = ticker.history(period=period, interval=interval)
+                
+                if data.empty:
+                    logger.warning(f"No data found for {symbol} (attempt {attempt + 1})")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                        continue
+                    return None
+                
+                # Reset index to make Date a column
+                data = data.reset_index()
+                
+                # Rename columns for consistency
+                data.columns = [col.lower() for col in data.columns]
+                
+                # Add symbol column
+                data['symbol'] = symbol
+                
+                logger.info(f"Successfully fetched {len(data)} records for {symbol}")
+                return data
+                
+            except Exception as e:
+                logger.error(f"Error fetching data for {symbol} (attempt {attempt + 1}): {str(e)}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                    continue
                 return None
-            
-            # Reset index to make Date a column
-            data = data.reset_index()
-            
-            # Rename columns for consistency
-            data.columns = [col.lower() for col in data.columns]
-            
-            # Add symbol column
-            data['symbol'] = symbol
-            
-            logger.info(f"Successfully fetched {len(data)} records for {symbol}")
-            return data
-            
-        except Exception as e:
-            logger.error(f"Error fetching data for {symbol}: {str(e)}")
-            return None
+        
+        return None
     
     async def get_stock_data_alpha_vantage(
         self, 
@@ -118,6 +146,39 @@ class DataCollector:
         except Exception as e:
             logger.error(f"Error fetching data for {symbol}: {str(e)}")
             return None
+    
+    async def get_stock_data_with_fallback(
+        self, 
+        symbol: str, 
+        period: str = "1y",
+        interval: str = "1d"
+    ) -> Optional[pd.DataFrame]:
+        """
+        Fetch stock data with fallback to alternative sources
+        
+        Args:
+            symbol: Stock symbol
+            period: Time period for Yahoo Finance
+            interval: Data interval
+        
+        Returns:
+            DataFrame with OHLCV data
+        """
+        # Try Yahoo Finance first
+        data = await self.get_stock_data_yahoo(symbol, period, interval)
+        
+        if data is not None and not data.empty:
+            return data
+        
+        # Fallback to Alpha Vantage if Yahoo Finance fails
+        logger.info(f"Yahoo Finance failed for {symbol}, trying Alpha Vantage...")
+        data = await self.get_stock_data_alpha_vantage(symbol)
+        
+        if data is not None and not data.empty:
+            return data
+        
+        logger.error(f"All data sources failed for {symbol}")
+        return None
     
     async def get_multiple_stocks(
         self, 

@@ -14,7 +14,7 @@ class PriceBroadcaster:
         self.data_collector = DataCollector()
         self.price_cache: Dict[str, float] = {}
         self.last_update: Dict[str, datetime] = {}
-        self.update_interval = 30  # seconds
+        self.update_interval = 10  # seconds
         self.is_running = False
         
     async def start(self):
@@ -52,12 +52,12 @@ class PriceBroadcaster:
             
             for symbol in symbols:
                 try:
-                    # Fetch current price
-                    stock_data = await self.data_collector.get_stock_data_yahoo(
+                    # Fetch current price with retry logic and fallback
+                    stock_data = await self.data_collector.get_stock_data_with_fallback(
                         symbol, period="1d", interval="1m"
                     )
                     
-                    if stock_data and len(stock_data) > 0:
+                    if stock_data is not None and len(stock_data) > 0:
                         current_price = stock_data.iloc[-1]['Close']
                         previous_price = self.price_cache.get(symbol, current_price)
                         
@@ -78,9 +78,13 @@ class PriceBroadcaster:
                         )
                         
                         logger.info(f"Broadcasted {symbol}: ${current_price:.2f} ({price_change_percent:+.2f}%)")
+                    else:
+                        logger.warning(f"Failed to fetch data for {symbol}, skipping broadcast")
                         
                 except Exception as e:
                     logger.error(f"Error fetching price for {symbol}: {e}")
+                    # Continue with other symbols instead of stopping the entire loop
+                    continue
                     
         except Exception as e:
             logger.error(f"Error in broadcast_price_updates: {e}")

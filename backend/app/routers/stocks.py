@@ -19,6 +19,68 @@ async def get_stocks():
         "message": "Available stocks for prediction"
     }
 
+@router.get("/{symbol}/realtime")
+async def get_stock_realtime(symbol: str):
+    """Get real-time stock data"""
+    try:
+        data_collector = DataCollector()
+        stock_data = await data_collector.get_stock_data_yahoo(symbol, period="1d", interval="1m")
+        
+        if stock_data is None or stock_data.empty:
+            raise HTTPException(status_code=404, detail=f"No real-time data found for {symbol}")
+        
+        # Get the latest data point
+        latest_data = stock_data.iloc[-1]
+        
+        return {
+            "symbol": symbol,
+            "price": float(latest_data['close']),
+            "change": float(latest_data['close'] - stock_data.iloc[-2]['close']) if len(stock_data) > 1 else 0,
+            "change_percent": float(((latest_data['close'] - stock_data.iloc[-2]['close']) / stock_data.iloc[-2]['close'] * 100)) if len(stock_data) > 1 else 0,
+            "volume": float(latest_data['volume']),
+            "timestamp": latest_data.name.isoformat() if hasattr(latest_data.name, 'isoformat') else str(latest_data.name)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{symbol}/chart")
+async def get_stock_chart_data(
+    symbol: str,
+    period: str = Query("1mo", description="Time period: 1d, 5d, 1mo, 3mo, 6mo, 1y"),
+    interval: str = Query("1d", description="Data interval: 1m, 5m, 15m, 30m, 1h, 1d")
+):
+    """Get historical chart data for a stock"""
+    try:
+        data_collector = DataCollector()
+        stock_data = await data_collector.get_stock_data_yahoo(symbol, period=period, interval=interval)
+        
+        if stock_data is None or stock_data.empty:
+            raise HTTPException(status_code=404, detail=f"No chart data found for {symbol}")
+        
+        # Transform data for chart format
+        chart_data = []
+        for index, row in stock_data.iterrows():
+            chart_data.append({
+                "timestamp": index.isoformat() if hasattr(index, 'isoformat') else str(index),
+                "open": float(row['open']),
+                "high": float(row['high']),
+                "low": float(row['low']),
+                "close": float(row['close']),
+                "volume": float(row['volume'])
+            })
+        
+        return {
+            "symbol": symbol,
+            "period": period,
+            "interval": interval,
+            "data_points": len(chart_data),
+            "data": chart_data,
+            "latest_price": float(stock_data['close'].iloc[-1]),
+            "data_source": "yahoo"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/{symbol}")
 async def get_stock_data(symbol: str):
     """Get stock data for a specific symbol"""
