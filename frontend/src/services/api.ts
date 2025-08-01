@@ -1,5 +1,6 @@
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
 
+//Interfaces
 export interface StockData {
   symbol: string;
   data_points: number;
@@ -93,6 +94,49 @@ export interface PortfolioDetails {
   total_holdings: number;
 }
 
+export interface ChartDataPoint {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface ChartData {
+  symbol: string;
+  period: string;
+  interval: string;
+  data_points: number;
+  data: ChartDataPoint[];
+  latest_price: number;
+  data_source: string;
+}
+
+export interface RealTimeData {
+  symbol: string;
+  price: number;
+  change: number;
+  change_percent: number;
+  volume: number;
+  timestamp: string;
+}
+
+export interface ChartConfig{
+  symbol: string;
+  timeframe: '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d' | '1w';
+  period: '1d' | '5d' | '1mo' | '3mo' | '6mo' | '1y';
+}
+
+export interface RealTimeUpdate {
+  type: 'price_update';
+  symbol: string;
+  price: number;
+  change: number;
+  change_percent: number;
+  timestamp: string;
+}
+
 class ApiService {
   private baseUrl: string;
 
@@ -133,6 +177,22 @@ class ApiService {
 
   async getStockData(symbol: string): Promise<StockData> {
     return this.request<StockData>(`/stocks/${symbol}`);
+  }
+
+  async getChartData(
+    symbol: string,
+    period: string = "1mo",
+    interval: string = "1d"
+  ): Promise<ChartData> {
+    const params = new URLSearchParams();
+    params.append('period', period);
+    params.append('interval', interval);
+    
+    return this.request<ChartData>(`/stocks/${symbol}/chart?${params}`);
+  }
+
+  async getRealTimeData(symbol: string): Promise<RealTimeData> {
+    return this.request<RealTimeData>(`/stocks/${symbol}/realtime`);
   }
 
   async getStockPrediction(

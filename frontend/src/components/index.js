@@ -6,6 +6,7 @@ import Portfolio from './portfolio';
 import Alerts from './alerts';
 import ApiTest from './ApiTest';
 import StockPredictorTest from './StockPredictorTest';
+import Chart from './chart';
 
 
 export { 
@@ -17,4 +18,5 @@ export {
     Alerts,
     ApiTest,
     StockPredictorTest,
+    Chart,
 };

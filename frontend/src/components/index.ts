@@ -6,3 +6,4 @@ export { default as Portfolio } from './portfolio';
 export { default as Alerts } from './alerts';
 export { default as ApiTest } from './ApiTest';
 export { default as StockPredictorTest } from './StockPredictorTest'; 
+export { default as Chart } from './chart';

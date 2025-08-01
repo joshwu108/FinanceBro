@@ -18,8 +18,8 @@ const navbar = () => {
         <Link to='/alerts' className='text-white hover:text-blue-200 transition-colors duration-200 font-medium'>
           Alerts
         </Link>
-        <Link to='/test' className='text-white hover:text-blue-200 transition-colors duration-200 font-medium'>
-          Test
+        <Link to='/chart' className='text-white hover:text-blue-200 transition-colors duration-200 font-medium'>
+          Chart
         </Link>
         <a href='#aboutus' className='text-white hover:text-blue-200 transition-colors duration-200 font-medium cursor-pointer'>
           About

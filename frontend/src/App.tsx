@@ -1,6 +1,6 @@
 import './index.css';
 import './App.css';
-import { Homepage, Navbar, Dashboard, Stocks, Portfolio, Alerts, ApiTest, StockPredictorTest } from './components';
+import { Homepage, Navbar, Dashboard, Stocks, Portfolio, Alerts, Chart } from './components';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -16,7 +16,7 @@ function App() {
                     <Route path='/stocks' element={<Stocks />} />
                     <Route path='/portfolio' element={<Portfolio />} />
                     <Route path='/alerts' element={<Alerts />} />
-                    <Route path='/test' element={<><ApiTest /><StockPredictorTest /></>} />
+                    <Route path='/chart' element={<Chart />} />
                 </Routes>
             </Router>
             <ToastContainer
