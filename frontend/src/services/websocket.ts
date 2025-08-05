@@ -1,5 +1,3 @@
-import { toast } from "react-toastify";
-
 class WebSocketService {
     private ws: WebSocket | null = null;
     private reconnectAttempts = 0;
@@ -12,7 +10,7 @@ class WebSocketService {
         this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {
-            toast.info(`Websocket connected to ${wsUrl}`);
+            console.info(`Websocket connected to ${wsUrl}`);
             this.reconnectAttempts = 0;
         };
         this.ws.onmessage = (event) => {
@@ -24,11 +22,11 @@ class WebSocketService {
             }
         };
         this.ws.onerror = (error) => {
-            toast.error(`Websocket error: ${error}`);
+            console.error(`Websocket error: ${error}`);
             if (onError) onError(error);
         };
         this.ws.onclose = () => {
-            toast.error('Websocket disconnected');
+            console.error('Websocket disconnected');
             if (onClose) onClose();
         };
     };
@@ -53,7 +51,7 @@ class WebSocketService {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(message);
         } else {
-            toast.error('Websocket not connected');
+            console.error('Websocket not connected');
         }
     }
 }

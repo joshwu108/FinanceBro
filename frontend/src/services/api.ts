@@ -184,11 +184,15 @@ class ApiService {
     period: string = "1mo",
     interval: string = "1d"
   ): Promise<ChartData> {
-    const params = new URLSearchParams();
-    params.append('period', period);
-    params.append('interval', interval);
-    
-    return this.request<ChartData>(`/stocks/${symbol}/chart?${params}`);
+    try {
+      const params = new URLSearchParams();
+      params.append('period', period);
+      params.append('interval', interval);
+      return this.request<ChartData>(`/stocks/${symbol}/chart?${params}`);
+    } catch (error) {
+      console.error('Error fetching chart data:', error);
+      throw error;
+    }
   }
 
   async getRealTimeData(symbol: string): Promise<RealTimeData> {

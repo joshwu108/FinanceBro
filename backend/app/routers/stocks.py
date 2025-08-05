@@ -6,6 +6,7 @@ from app.services.financial_analyzer import FinancialAnalyzer
 import numpy as np
 import json
 import logging
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -53,22 +54,43 @@ async def get_stock_chart_data(
     try:
         data_collector = DataCollector()
         stock_data = await data_collector.get_stock_data_yahoo(symbol, period=period, interval=interval)
+        print(f"Raw stock data for {symbol}:")
+        print(stock_data)
         
         if stock_data is None or stock_data.empty:
             raise HTTPException(status_code=404, detail=f"No chart data found for {symbol}")
         
+        stock_data = stock_data[::-1][:100]
+        
+        # Check if we have any data after filtering
+        if stock_data.empty:
+            logger.warning(f"No data remaining after filtering for {symbol}, using original data")
+            stock_data = await data_collector.get_stock_data_yahoo(symbol, period=period, interval=interval)
+            if stock_data is None or stock_data.empty:
+                raise HTTPException(status_code=404, detail=f"No data found for {symbol}")
+        
         # Transform data for chart format
         chart_data = []
         for index, row in stock_data.iterrows():
-            chart_data.append({
-                "timestamp": index.isoformat() if hasattr(index, 'isoformat') else str(index),
-                "open": float(row['open']),
-                "high": float(row['high']),
-                "low": float(row['low']),
-                "close": float(row['close']),
-                "volume": float(row['volume'])
-            })
+            try:
+                chart_data.append({
+                    "timestamp": str(row['datetime']) if 'datetime' in row.index else str(row['date']),
+                    "open": float(row['open']),
+                    "high": float(row['high']),
+                    "low": float(row['low']),
+                    "close": float(row['close']),
+                    "volume": float(row['volume'])
+                })
+            except Exception as e:
+                logger.error(f"Error processing row for {symbol}: {e}")
+                continue
         
+        # Log the date range for debugging
+        if chart_data:
+            first_date = chart_data[0]["timestamp"]
+            last_date = chart_data[-1]["timestamp"]
+            logger.info(f"Date range for {symbol}: {first_date} to {last_date}")
+        print('chart_data', chart_data)
         return {
             "symbol": symbol,
             "period": period,
@@ -79,6 +101,7 @@ async def get_stock_chart_data(
             "data_source": "yahoo"
         }
     except Exception as e:
+        logger.error(f"Error fetching chart data for {symbol}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{symbol}")
@@ -88,11 +111,7 @@ async def get_stock_data(symbol: str):
         data_collector = DataCollector()
         stock_data = await data_collector.get_stock_data_yahoo(symbol, period="1y", interval="1d")
         
-        # If Yahoo Finance fails, use sample data
-        if stock_data is None or stock_data.empty:
-            logger.warning(f"Yahoo Finance failed for {symbol}, using sample data")
-            stock_data = data_collector.get_sample_data(symbol)
-        
+        # If Yahoo Finance fails, return error instead of fake data
         if stock_data is None or stock_data.empty:
             raise HTTPException(status_code=404, detail=f"No data found for {symbol}")
         
@@ -101,7 +120,7 @@ async def get_stock_data(symbol: str):
             "data_points": len(stock_data),
             "columns": list(stock_data.columns),
             "latest_price": float(stock_data['close'].iloc[-1]) if 'close' in stock_data.columns else None,
-            "data_source": "yahoo" if stock_data is not None and not stock_data.empty else "sample"
+            "data_source": "yahoo"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
