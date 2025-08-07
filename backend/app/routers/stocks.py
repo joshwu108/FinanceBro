@@ -7,6 +7,8 @@ import numpy as np
 import json
 import logging
 import pandas as pd
+import yfinance as yf
+import logging
 
 logger = logging.getLogger(__name__)
 

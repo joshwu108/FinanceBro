@@ -10,6 +10,14 @@ import json
 from datetime import datetime, timedelta
 import openai
 from dataclasses import dataclass
+import yfinance as yf
+from fastapi import HTTPException
+from app.services.sentiment_analyzer import sentiment_analyzer
+import time
+import re
+import streamlit as st
+import requests
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +50,7 @@ class FinancialAnalyzer:
     
     def __init__(self, openai_api_key: Optional[str] = None):
         self.openai_api_key = openai_api_key
+        self.sentiment_analyzer = sentiment_analyzer
         if openai_api_key:
             openai.api_key = openai_api_key
     
@@ -389,6 +398,82 @@ class FinancialAnalyzer:
             "factors": ["technical_analysis", "ml_prediction"],
             "last_updated": datetime.now().isoformat()
         }
+    
+    async def get_stock_news(self, symbol: str, news_count: int = 10):
+        """Get news for a stock with better error handling"""
+        try:
+            news = yf.Search(symbol, news_count).news
+            processed_news = []
+            for article in news[:news_count]:
+                try:
+                    processed_article = {
+                        'title': article.get('title', ''),
+                        'content': article.get('summary', ''),
+                        'url': article.get('link', ''),
+                        'published_date': article.get('providerPublishTime', ''),
+                        'source': article.get('publisher', 'Yahoo Finance')
+                    }
+                    processed_news.append(processed_article)
+                except Exception as e:
+                    logger.warning(f"Error processing article: {e}")
+                    continue
+            
+            return processed_news
+            
+        except Exception as e:
+            logger.error(f"Error getting news for {symbol}: {str(e)}")
+            return []  # Return empty list instead of raising exception
+            
+    def process_article(self, article: Dict):
+        """Process the individual sentiment of the article relating to a stock"""
+        article_title = article['title']
+        article_url = article['url']
+        article_summary = article['content']
+        headline_text = f"Title: {article_title}\nSummary: {article_summary}"
+        headline_sentiment = self.sentiment_analyzer.analyze_sentiment(headline_text, 'financial')
+
+        article_full_text = ""
+        if article_url:
+            article_full_text = self.extract_article_text(article_url)
+            time.sleep(1)
+        
+        article_sentiment = None
+        if article_full_text:
+            article_sentiment = self.sentiment_analyzer.analyze_sentiment(article_full_text, 'financial')
+
+        return headline_sentiment, article_sentiment
+
+    async def get_stock_sentiment(self, symbol:str, news_count: int = 10):
+        """Get the sentiment of the stock"""
+        news = await self.get_stock_news(symbol, news_count)
+        headline_sentiment = None
+        article_sentiment = None
+        for article in news:
+            headline_sentiment, article_sentiment = self.process_article(article)
+            print(f"Headline sentiment: {headline_sentiment}, Article sentiment: {article_sentiment}")
+        return headline_sentiment, article_sentiment
+    
+    def extract_article_text(self, article_url: str):
+        """Extract the text of the article using an agent"""
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+
+            response = requests.get(article_url, headers=headers)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            for script_or_style in soup(['script', 'style']):
+                script_or_style.extract()
+
+            paragraphs = soup.find_all('p')
+            article_text = ' '.join([p.get_text() for p in paragraphs])
+            return article_text
+
+        except Exception as e:
+            logger.error(f"Error extracting article text: {str(e)}")
+            return None
 
 
 # Global instance
