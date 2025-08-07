@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
+import api from '../services/api';
 
 const Stocks = () => {
     const [searchTerm, setSearchTerm] = useState('');
+    const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+    const [aiAnalysis, setAiAnalysis] = useState<string>('');
     
     const stocks = [
         { symbol: 'AAPL', name: 'Apple Inc.', price: 175.43, change: '+2.1%', volume: '45.2M', marketCap: '2.7T' },
@@ -16,6 +19,22 @@ const Stocks = () => {
         stock.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
         stock.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    const getAIAnalysis = async () => {
+        if (!searchTerm) {
+            alert('Please enter a stock symbol');
+            return;
+        }
+        setLoadingAnalysis(true);
+        try {
+            const response = await api.getStockAnalysis(searchTerm);
+            setAiAnalysis(response);
+        } catch (error) {
+            console.error('Error fetching AI analysis:', error);
+        } finally {
+            setLoadingAnalysis(false);
+        }
+    }
 
     return (
         <div className='min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6'>
@@ -38,9 +57,16 @@ const Stocks = () => {
                                 className='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent'
                             />
                         </div>
-                        <button className='bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors'>
+                        <button 
+                            onClick={getAIAnalysis}
+                            className={`bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors ${loadingAnalysis ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            disabled={loadingAnalysis}
+                        >
                             Run AI Analysis
                         </button>
+                    </div>
+                    <div className='mt-4'>
+                        <p className='text-gray-600'>{aiAnalysis}</p>
                     </div>
                 </div>
 

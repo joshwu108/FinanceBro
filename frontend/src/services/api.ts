@@ -206,13 +206,6 @@ class ApiService {
     return this.request<StockPrediction>(`/stocks/${symbol}/predict?model=${model}`);
   }
 
-  async getStockAnalysis(
-    symbol: string,
-    model: string = 'random_forest'
-  ): Promise<StockAnalysis> {
-    return this.request<StockAnalysis>(`/stocks/${symbol}/analyze?model=${model}`);
-  }
-
   async trainStockModels(symbol: string): Promise<{
     symbol: string;
     training_completed: boolean;
@@ -319,11 +312,7 @@ class ApiService {
     return this.request<{ portfolios: PortfolioData[]; total: number }>(`/portfolio/?${params}`);
   }
 
-  async createPortfolio(
-    name: string,
-    description?: string,
-    userId: number = 1
-  ): Promise<{
+  async createPortfolio(name: string, description?: string, userId: number = 1): Promise<{
     id: number;
     name: string;
     description: string | null;
@@ -349,13 +338,7 @@ class ApiService {
     return this.request<PortfolioDetails>(`/portfolio/${portfolioId}`);
   }
 
-  async addHolding(
-    portfolioId: number,
-    stockSymbol: string,
-    shares: number,
-    averagePrice: number,
-    purchaseDate?: string
-  ): Promise<{
+  async addHolding(portfolioId: number, stockSymbol: string, shares: number, averagePrice: number, purchaseDate?: string): Promise<{
     id: number;
     stock_symbol: string;
     shares: number;
@@ -373,12 +356,7 @@ class ApiService {
     });
   }
 
-  async updateHolding(
-    portfolioId: number,
-    holdingId: number,
-    shares?: number,
-    averagePrice?: number
-  ): Promise<{
+  async updateHolding(portfolioId: number, holdingId: number, shares?: number, averagePrice?: number): Promise<{
     id: number;
     stock_symbol: string;
     shares: number;
@@ -394,14 +372,16 @@ class ApiService {
     });
   }
 
-  async deleteHolding(
-    portfolioId: number,
-    holdingId: number
-  ): Promise<{ message: string }> {
+  async deleteHolding(portfolioId: number, holdingId: number): Promise<{ message: string }> {
     return this.request(`/portfolio/${portfolioId}/holdings/${holdingId}`, {
       method: 'DELETE',
     });
   }
+
+  async getStockAnalysis(symbol:string): Promise<string> {
+    return this.request<string>(`/stocks/${symbol}/analysis`);
+  }
+
 }
 
 export const apiService = new ApiService();
