@@ -9,6 +9,7 @@ import logging
 import pandas as pd
 import yfinance as yf
 import logging
+from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -220,124 +221,19 @@ async def get_stock_prediction(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/{symbol}/analyze")
-async def get_stock_analysis(
-    symbol: str, 
-    model: str = Query("random_forest", description="Model to use for prediction")
-):
-    """Get comprehensive stock analysis including trend and trading advice"""
-    try:
-        # Collect and engineer data
-        data_collector = DataCollector()
-        stock_data = await data_collector.get_stock_data_yahoo(symbol, period="1y", interval="1d")
         
-        if stock_data is None or stock_data.empty:
-            raise HTTPException(status_code=404, detail=f"No data found for {symbol}")
-        
-        engineer = FeatureEngineer()
-        technical_indicators = engineer.calculate_technical_indicators(stock_data)
-        features_df = engineer.create_target_variables(technical_indicators)
-        
-        if features_df is None or features_df.empty:
-            raise HTTPException(status_code=500, detail="Failed to engineer features")
-        
-        # Train model and get prediction
-        ml_manager = MLModelManager()
-        model_name = f"{symbol}_{model}"
-        
-        X_train, X_test, y_train, y_test = engineer.prepare_ml_data(
-            features_df, target_column='target_direction_1d', test_size=0.2, sequence_length=3
-        )
-        
-        X_train_flat = X_train.reshape(X_train.shape[0], -1)
-        X_test_flat = X_test.reshape(X_test.shape[0], -1)
-        
-        # Train the model
-        ml_manager.train_random_forest(
-            X_train_flat, y_train, X_test_flat, y_test, 
-            model_name=model_name, task="classification"
-        )
-        
-        # Get prediction
-        latest_features = X_train_flat[-1:].reshape(1, -1)
-        prediction = ml_manager.predict(model_name, latest_features, return_probability=True)
-        
-        # Extract prediction value
-        if prediction is not None and len(prediction) > 0:
-            if len(prediction.shape) > 1 and prediction.shape[1] > 1:
-                ml_prediction = float(prediction[0][1])  # Probability of positive class
-            else:
-                ml_prediction = float(prediction[0])
-        else:
-            ml_prediction = 0.5
-        
-        # Analyze trend and generate advice
-        financial_analyzer = FinancialAnalyzer()
-        
-        trend_analysis = financial_analyzer.analyze_trend(
-            stock_data, technical_indicators, ml_prediction, symbol
-        )
-        
-        trading_advice = financial_analyzer.generate_trading_advice(
-            trend_analysis, stock_data, technical_indicators, ml_prediction, symbol
-        )
-        
-        # Get market sentiment
-        sentiment = financial_analyzer.get_market_sentiment(symbol)
-        
-        return {
-            "symbol": symbol,
-            "current_price": float(stock_data['close'].iloc[-1]),
-            "analysis_date": stock_data.index[-1].isoformat() if hasattr(stock_data.index[-1], 'isoformat') else str(stock_data.index[-1]),
-            
-            "ml_prediction": {
-                "model": model,
-                "probability": ml_prediction,
-                "confidence": "high" if abs(ml_prediction - 0.5) > 0.2 else "medium" if abs(ml_prediction - 0.5) > 0.1 else "low"
-            },
-            
-            "trend_analysis": {
-                "trend": trend_analysis.trend,
-                "confidence": trend_analysis.confidence,
-                "strength": trend_analysis.strength,
-                "duration": trend_analysis.duration,
-                "key_levels": trend_analysis.key_levels,
-                "reasoning": trend_analysis.reasoning
-            },
-            
-            "trading_advice": {
-                "action": trading_advice.action,
-                "confidence": trading_advice.confidence,
-                "risk_level": trading_advice.risk_level,
-                "target_price": trading_advice.target_price,
-                "stop_loss": trading_advice.stop_loss,
-                "timeframe": trading_advice.timeframe,
-                "reasoning": trading_advice.reasoning
-            },
-            
-            "market_sentiment": sentiment,
-            
-            "technical_indicators": {
-                "rsi": float(technical_indicators['rsi'].iloc[-1]) if 'rsi' in technical_indicators.columns else None,
-                "macd": float(technical_indicators['macd'].iloc[-1]) if 'macd' in technical_indicators.columns else None,
-                "sma_20": float(technical_indicators['sma_20'].iloc[-1]) if 'sma_20' in technical_indicators.columns else None,
-                "sma_50": float(technical_indicators['sma_50'].iloc[-1]) if 'sma_50' in technical_indicators.columns else None,
-                "volume": float(stock_data['volume'].iloc[-1]) if 'volume' in stock_data.columns else None
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Error analyzing {symbol}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
     
-@router.post("/{symbol}/sentiment")
-async def analyze_stock_sentiment(symbol: str, news_count: int = 5):
-    """Analyze the sentiment of a stock"""
-    financial_analyzer = FinancialAnalyzer()
-    collective_sentiment = await financial_analyzer.get_stock_sentiment(symbol, news_count)
-    return collective_sentiment
+@router.get("/{symbol}/analysis")
+async def get_stock_analysis(symbol: str):
+    """Fetch a detailed analysis of a stock"""
+    try:
+        financial_analyzer = FinancialAnalyzer()
+        stock_analysis = await financial_analyzer.get_stock_analysis(symbol)
+        logger.info(f"successfully fetched stock analysis {stock_analysis}")
+        return stock_analysis
+    except Exception as e:
+        logger.error(f"Error fetching stock analysis for {symbol}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/{symbol}/train")
