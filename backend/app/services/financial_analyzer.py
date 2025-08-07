@@ -443,15 +443,22 @@ class FinancialAnalyzer:
 
         return headline_sentiment, article_sentiment
 
-    async def get_stock_sentiment(self, symbol:str, news_count: int = 10):
+    async def get_stock_sentiment(self, symbol:str, news_count: int = 5):
         """Get the sentiment of the stock"""
         news = await self.get_stock_news(symbol, news_count)
         headline_sentiment = None
         article_sentiment = None
+        collective_sentiment = []
         for article in news:
             headline_sentiment, article_sentiment = self.process_article(article)
-            print(f"Headline sentiment: {headline_sentiment}, Article sentiment: {article_sentiment}")
-        return headline_sentiment, article_sentiment
+            collective_sentiment.append({
+                'title': article['title'],
+                'headline_sentiment': headline_sentiment['sentiment'],
+                'article_sentiment': article_sentiment['sentiment'],
+                'headline_score': headline_sentiment['score'],
+                'article_score': article_sentiment['score']
+            })
+        return collective_sentiment
     
     def extract_article_text(self, article_url: str):
         """Extract the text of the article using an agent"""

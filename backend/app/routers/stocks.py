@@ -331,6 +331,13 @@ async def get_stock_analysis(
     except Exception as e:
         logger.error(f"Error analyzing {symbol}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+@router.post("/{symbol}/sentiment")
+async def analyze_stock_sentiment(symbol: str, news_count: int = 5):
+    """Analyze the sentiment of a stock"""
+    financial_analyzer = FinancialAnalyzer()
+    collective_sentiment = await financial_analyzer.get_stock_sentiment(symbol, news_count)
+    return collective_sentiment
 
 
 @router.post("/{symbol}/train")

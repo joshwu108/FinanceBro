@@ -5,7 +5,7 @@ import uvicorn
 from contextlib import asynccontextmanager
 import asyncio
 
-from app.routers import stocks, alerts, portfolio, websocket, ai_analysis
+from app.routers import stocks, alerts, portfolio, websocket
 from app.services.database import init_db
 from app.services.redis_client import init_redis
 from app.services.price_broadcaster import price_broadcaster
@@ -51,7 +51,7 @@ app.include_router(stocks.router, prefix="/api/v1/stocks", tags=["stocks"])
 app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["alerts"])
 app.include_router(portfolio.router, prefix="/api/v1/portfolio", tags=["portfolio"])
 app.include_router(websocket.router, tags=["websocket"])
-app.include_router(ai_analysis.router, prefix="/api/v1/ai", tags=["ai-analysis"])
+#app.include_router(ai_analysis.router, prefix="/api/v1/ai", tags=["ai-analysis"])
 #app.include_router(models.router, prefix="/api/v1/models", tags=["models"])
 
 

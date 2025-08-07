@@ -41,7 +41,6 @@ class SentimentAnalyzer:
             if not model:
                 return []
             
-            results = []
             if not text or len(text.strip()) == 0:
                 return {'text': text, 'sentiment': 'neutral', 'score': 0.0}
                 
@@ -51,7 +50,7 @@ class SentimentAnalyzer:
             
             result = model(text)
             return {
-                'text': text,
+                'text': text[:100],
                 'sentiment': result[0]['label'],
                 'score': result[0]['score']
             }
