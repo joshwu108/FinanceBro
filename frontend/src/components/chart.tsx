@@ -116,146 +116,147 @@ const Chart = () => {
     }, [period, timeframe]);
 
     return (
-        <div className='w-full h-full flex flex-col'>
-            {/*Header */}
-            <div className='flex items-center justify-between p-4 border-b bg-white shadow-sm'>
-                <h1 className='text-2xl font-bold text-gray-800'>Stock Charts</h1>
-                
-                {/* Symbol Input */}
-                <form onSubmit={handleSymbolSubmit} className='flex items-center gap-2'>
-                    <input
-                        type="text"
-                        placeholder="Enter stock symbol (e.g., AAPL)"
-                        value={currentSymbol}
-                        onChange={(e) => setCurrentSymbol(e.target.value.toUpperCase())}
-                        className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <button
-                        type="submit"
-                        disabled={!currentSymbol || isLoading}
-                        className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {isLoading ? 'Loading...' : 'Load Chart'}
-                    </button>
-                </form>
-                
-                {/* Timeframe Selector */}
-                <div className='flex items-center gap-2'>
-                    <label className='text-sm font-medium text-gray-700'>Period:</label>
-                    <select
-                        value={period}
-                        onChange={(e) => setPeriod(e.target.value as any)}
-                        className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                        <option value="1d">1 Day</option>
-                        <option value="5d">5 Days</option>
-                        <option value="1mo">1 Month</option>
-                        <option value="3mo">3 Months</option>
-                        <option value="6mo">6 Months</option>
-                        <option value="1y">1 Year</option>
-                    </select>
-                    
-                    <label className='text-sm font-medium text-gray-700'>Interval:</label>
-                    <select
-                        value={timeframe}
-                        onChange={(e) => setTimeframe(e.target.value as any)}
-                        className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                        <option value="1d">Daily</option>
-                        <option value="1h">Hourly</option>
-                        <option value="30m">30 Min</option>
-                        <option value="15m">15 Min</option>
-                        <option value="5m">5 Min</option>
-                        <option value="1m">1 Min</option>
-                    </select>
+        <div className='min-h-screen bg-gray-50'>
+            <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8'>
+                {/* Header */}
+                <div className='mb-8'>
+                    <h1 className='text-4xl font-bold text-gray-900 mb-2'>Stock Charts</h1>
+                    <p className='text-gray-600'>Interactive charts and technical analysis tools</p>
                 </div>
-            </div>
-            
-            {/* Real-time Price Display */}
-            {realTimeData && (
-                <div className='bg-green-50 border-b border-green-200 p-3'>
-                    <div className='flex items-center justify-between'>
-                        <span className='font-semibold text-green-800'>
-                            {realTimeData.symbol}: ${realTimeData.price.toFixed(2)}
-                        </span>
-                        <span className={`font-semibold ${realTimeData.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {realTimeData.change >= 0 ? '+' : ''}{realTimeData.change.toFixed(2)} ({realTimeData.change_percent.toFixed(2)}%)
-                        </span>
-                    </div>
+
+                {/* Controls */}
+                <div className='bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8'>
+                    <form onSubmit={handleSymbolSubmit} className='flex flex-col md:flex-row gap-4'>
+                        <div className='flex-1'>
+                            <input
+                                type='text'
+                                placeholder='Enter stock symbol (e.g., AAPL)'
+                                value={currentSymbol}
+                                onChange={(e) => setCurrentSymbol(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500"
+                            />
+                        </div>
+                        <div className='flex gap-2'>
+                            <select
+                                value={period}
+                                onChange={(e) => setPeriod(e.target.value as any)}
+                                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500"
+                            >
+                                <option value="1d">1 Day</option>
+                                <option value="5d">5 Days</option>
+                                <option value="1mo">1 Month</option>
+                                <option value="3mo">3 Months</option>
+                                <option value="6mo">6 Months</option>
+                                <option value="1y">1 Year</option>
+                            </select>
+                            <select
+                                value={timeframe}
+                                onChange={(e) => setTimeframe(e.target.value as any)}
+                                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500"
+                            >
+                                <option value="1m">1 Minute</option>
+                                <option value="5m">5 Minutes</option>
+                                <option value="15m">15 Minutes</option>
+                                <option value="30m">30 Minutes</option>
+                                <option value="1h">1 Hour</option>
+                                <option value="1d">1 Day</option>
+                            </select>
+                            <button
+                                type="submit"
+                                className="bg-gray-800 text-white px-4 py-2 rounded-md hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={isLoading}
+                            >
+                                {isLoading ? 'Loading...' : 'Load Chart'}
+                            </button>
+                        </div>
+                    </form>
                 </div>
-            )}
-            
-            {/*Chart Container */}
-            <div className='flex-1 p-4 bg-gray-50'>
+
+                {/* Error Display */}
                 {error && (
-                    <div className='text-red-500 mb-4 p-3 bg-red-50 border border-red-200 rounded-md'>
+                    <div className='bg-red-100 border border-red-300 text-red-800 px-4 py-3 rounded-lg mb-8'>
                         {error}
                     </div>
                 )}
-                
-                {isLoading && (
-                    <div className='flex items-center justify-center h-64'>
-                        <div className='text-lg text-gray-600'>Loading chart data...</div>
+
+                {/* Real-time Data Display */}
+                {realTimeData && (
+                    <div className='bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-8'>
+                        <h3 className='text-lg font-semibold text-gray-900 mb-2'>Real-time Data - {realTimeData.symbol}</h3>
+                        <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
+                            <div>
+                                <p className='text-sm text-gray-500'>Price</p>
+                                <p className='text-xl font-bold text-gray-900'>${realTimeData.price.toFixed(2)}</p>
+                            </div>
+                            <div>
+                                <p className='text-sm text-gray-500'>Change</p>
+                                <p className={`text-xl font-bold ${realTimeData.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    {realTimeData.change >= 0 ? '+' : ''}{realTimeData.change.toFixed(2)}
+                                </p>
+                            </div>
+                            <div>
+                                <p className='text-sm text-gray-500'>Change %</p>
+                                <p className={`text-xl font-bold ${realTimeData.change_percent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    {realTimeData.change_percent >= 0 ? '+' : ''}{realTimeData.change_percent.toFixed(2)}%
+                                </p>
+                            </div>
+                            <div>
+                                <p className='text-sm text-gray-500'>Volume</p>
+                                <p className='text-xl font-bold text-gray-900'>{realTimeData.volume.toLocaleString()}</p>
+                            </div>
+                        </div>
                     </div>
                 )}
-                
-                {chartData.length > 0 && (
-                    <div className='h-96 bg-white rounded-lg shadow-sm p-4'>
-                        <StockChartComponent
-                            id="stock-chart"
-                            primaryXAxis={{
-                                valueType: 'DateTime',
-                                majorGridLines: { color: '#f0f0f0' },
-                                majorTickLines: { color: '#666' },
-                                labelStyle: { color: '#666' }
-                            }}
-                            primaryYAxis={{
-                                majorGridLines: { color: '#f0f0f0' },
-                                majorTickLines: { color: '#666' },
-                                labelStyle: { color: '#666' },
-                                labelFormat: '${value}'
-                            }}
-                            chartArea={{
-                                border: { width: 0 }
-                            }}
-                            tooltip={{
-                                enable: true,
-                                format: '${point.x} : ${point.y}'
-                            }}
-                            crosshair={{
-                                enable: true,
-                                lineType: 'Vertical'
-                            }}
-                            legendSettings={{
-                                visible: false
-                            }}
-                            height="100%"
-                            width="100%"
-                        >
-                            <Inject services={[DateTime, LineSeries, SplineSeries, CandleSeries, Tooltip]} />
-                            <StockChartSeriesCollectionDirective>
-                                <StockChartSeriesDirective
-                                    dataSource={chartData}
-                                    xName="x"
-                                    yName="close"
-                                    type="Candle"
-                                    width={2}
-                                    fill="#26a69a"
-                                    border={{ color: '#26a69a', width: 2 }}
-                                />
-                            </StockChartSeriesCollectionDirective>
-                        </StockChartComponent>
-                    </div>
-                )}
-                
-                {!chartData.length && !isLoading && !error && (
-                    <div className='flex items-center justify-center h-64'>
-                        <div className='text-lg text-gray-500'>Enter a stock symbol to view chart</div>
-                    </div>
-                )}
+
+                {/* Chart Display */}
+                <div className='bg-white rounded-xl shadow-sm border border-gray-200 p-6'>
+                    {isLoading ? (
+                        <div className='flex items-center justify-center h-96'>
+                            <div className='animate-spin rounded-full h-12 w-12 border-b-2 border-gray-600'></div>
+                        </div>
+                    ) : chartData.length > 0 ? (
+                        <div className='h-96'>
+                            <StockChartComponent
+                                primaryXAxis={{
+                                    valueType: 'DateTime',
+                                    majorGridLines: { color: 'gray' },
+                                    majorTickLines: { color: 'gray' }
+                                }}
+                                primaryYAxis={{
+                                    majorGridLines: { color: 'gray' },
+                                    majorTickLines: { color: 'gray' }
+                                }}
+                                chartArea={{ border: { color: 'gray' } }}
+                                tooltip={{ enable: true }}
+                                title={`${currentSymbol} Stock Price Chart`}
+                                width='100%'
+                                height='100%'
+                            >
+                                <Inject services={[DateTime, LineSeries, SplineSeries, CandleSeries, Tooltip]} />
+                                <StockChartSeriesCollectionDirective>
+                                    <StockChartSeriesDirective
+                                        dataSource={chartData}
+                                        type='Candle'
+                                        xName='x'
+                                        low='low'
+                                        high='high'
+                                        open='open'
+                                        close='close'
+                                        volume='volume'
+                                        name={currentSymbol}
+                                    />
+                                </StockChartSeriesCollectionDirective>
+                            </StockChartComponent>
+                        </div>
+                    ) : (
+                        <div className='flex items-center justify-center h-96 text-gray-500'>
+                            <p>Enter a stock symbol to view the chart</p>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
-    )
-}
+    );
+};
 
-export default Chart
+export default Chart;

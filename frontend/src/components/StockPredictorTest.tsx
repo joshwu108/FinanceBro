@@ -67,7 +67,7 @@ const StockPredictorTest = () => {
                                 type='text'
                                 value={symbol}
                                 onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                                className='w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+                                className='w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent'
                                 placeholder='AAPL'
                             />
                         </div>
@@ -76,7 +76,7 @@ const StockPredictorTest = () => {
                             <select
                                 value={model}
                                 onChange={(e) => setModel(e.target.value)}
-                                className='w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+                                className='w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent'
                             >
                                 <option value='Random_Forest'>Random Forest</option>
                                 <option value='XGBoost'>XGBoost</option>
@@ -92,7 +92,7 @@ const StockPredictorTest = () => {
                         <button
                             onClick={testStockData}
                             disabled={loading}
-                            className='bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50'
+                            className='bg-gray-800 text-white px-6 py-3 rounded-lg font-medium hover:bg-gray-700 transition-colors disabled:opacity-50'
                         >
                             {loading ? 'Testing...' : 'Test Stock Data'}
                         </button>
@@ -100,7 +100,7 @@ const StockPredictorTest = () => {
                         <button
                             onClick={testPrediction}
                             disabled={loading}
-                            className='bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50'
+                            className='bg-gray-700 text-white px-6 py-3 rounded-lg font-medium hover:bg-gray-600 transition-colors disabled:opacity-50'
                         >
                             {loading ? 'Predicting...' : 'Test Prediction'}
                         </button>
@@ -108,7 +108,7 @@ const StockPredictorTest = () => {
                         <button
                             onClick={trainModels}
                             disabled={loading}
-                            className='bg-purple-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-50'
+                            className='bg-gray-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-gray-500 transition-colors disabled:opacity-50'
                         >
                             {loading ? 'Training...' : 'Train Models'}
                         </button>
@@ -147,7 +147,7 @@ const StockPredictorTest = () => {
                             href='http://localhost:8000/docs' 
                             target='_blank' 
                             rel='noopener noreferrer'
-                            className='text-blue-600 hover:text-blue-800 underline'
+                            className='text-gray-600 hover:text-gray-800 underline'
                         >
                             View Full API Documentation →
                         </a>

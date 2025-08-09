@@ -65,7 +65,7 @@ const ApiTest = () => {
                     
                     <button 
                         onClick={testBackendConnection}
-                        className='mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors'
+                        className='mt-4 bg-gray-800 text-white px-6 py-2 rounded-lg font-medium hover:bg-gray-700 transition-colors'
                     >
                         Test Again
                     </button>
