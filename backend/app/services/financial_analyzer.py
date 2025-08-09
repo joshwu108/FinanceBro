@@ -57,14 +57,29 @@ class FinancialAnalyzer:
     def __init__(self, openai_api_key: Optional[str] = None):
         self.openai_api_key = openai_api_key
         self.sentiment_analyzer = sentiment_analyzer
-        self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B")
-        self.analyst_agent = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-0.5B")
-        self.qa_agent = pipeline(
-            "question-answering",
-            model="deepset/roberta-base-squad2",
-            torch_dtype=torch.float16,
-            device_map="auto" if torch.cuda.is_available() else None,
-        )  
+        self.device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+        try:
+            self.analyst_agent = pipeline(
+                "text-generation", 
+                model="gpt2-xl",  
+                torch_dtype=torch.float16,
+                device_map=self.device,
+            )
+        except Exception as e:
+            logger.warning(f"Could not load text generation model: {e}")
+            self.analyst_agent = None
+            
+        try:
+            self.qa_agent = pipeline(
+                "question-answering",
+                model="deepset/roberta-base-squad2",
+                device_map=self.device,
+                torch_dtype=torch.float32,
+            )
+        except Exception as e:
+            logger.warning(f"Could not load QA model: {e}")
+            self.qa_agent = None
+            
         if openai_api_key:
             openai.api_key = openai_api_key
     
@@ -479,8 +494,6 @@ class FinancialAnalyzer:
         agent_prompt = f"""
         You are a financial analyst agent. Your task is to analyze online investor sentiment about {symbol} stock.
 
-        You gather and summarize real-time data from public sources such as Reddit (e.g., r/stocks, r/wallstreetbets), Twitter, StockTwits, and financial news headlines.
-
         Focus on identifying whether overall sentiment is positive, negative, or neutral, and extract any common themes or catalysts (e.g., earnings reports, product news, rumors, macroeconomic changes).
 
         Respond with a brief summary in this format:
@@ -491,7 +504,6 @@ class FinancialAnalyzer:
             •	[e.g., “Rumors of upcoming partnership with Apple”]
             •	Social Volume Spike: [Yes/No, and platform if applicable]
             •	Sample Quote: “Insert a representative quote or headline here”
-
         Keep your summary concise, actionable, and professional.
 
         """
@@ -509,26 +521,18 @@ class FinancialAnalyzer:
         """
         logger.info(f"successfully generated agent prompt {agent_prompt}")
         try:
-            '''
+            # Check if analyst_agent is available
+            if self.analyst_agent is None:
+                logger.warning("Analyst agent not available, returning basic analysis")
+                return f"Basic analysis for {symbol}: Sentiment analysis not available due to model loading issues."
+            
             messages = [{'role': 'user', 'content': agent_prompt}]
-            inputs = self.tokenizer.apply_chat_template(
-                messages,
-                add_generation_prompt=True,
-                tokenize=True,
-                return_dict=True,
-                return_tensors="pt",
-            ).to(self.analyst_agent.device)
-
-            outputs = self.analyst_agent.generate(**inputs, max_new_tokens=40)
-            print(self.tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:]))
-            '''
-            question = f"Given the current political, social, and economic situation as well as the current news, give me an analysis on whether I should buy or sell or short {symbol}?"
-            response = self.qa_agent(question=question, context=agent_prompt, max_length=512, min_length=10)
+            response = self.analyst_agent(messages, max_new_tokens=256)
             logger.info(f"successfully generated stock analysis {response}")
-            return response['answer']
+            return response[0]['generated_text'][-1]
         except Exception as e:
             logger.error(f"Error generating stock analysis: {str(e)}")
-            return "Error generating stock analysis"
+            return f"Error generating stock analysis for {symbol}: {str(e)}"
 
     
     def extract_article_text(self, article_url: str):
