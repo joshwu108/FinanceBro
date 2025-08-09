@@ -19,6 +19,17 @@ async def get_portfolios(
 ):
     """Get all portfolios for a user"""
     try:
+        # Check if user exists, if not return empty list
+        from app.models.user import User
+        user = db.query(User).filter(User.id == user_id).first()
+        
+        if not user:
+            logger.info(f"No user found with ID {user_id}, returning empty portfolio list")
+            return {
+                "portfolios": [],
+                "total": 0
+            }
+        
         portfolios = db.query(Portfolio).filter(
             Portfolio.user_id == user_id,
             Portfolio.is_active == True
@@ -53,6 +64,26 @@ async def create_portfolio(
 ):
     """Create a new portfolio"""
     try:
+        # Check if user exists, if not create a default user
+        from app.models.user import User
+        user = db.query(User).filter(User.id == user_id).first()
+        
+        if not user:
+            # Create a default user
+            default_user = User(
+                id=user_id,
+                username=f"user{user_id}",
+                email=f"user{user_id}@example.com",
+                hashed_password="default_password_hash",  # In production, this should be properly hashed
+                full_name=f"Default User {user_id}",
+                is_active=True,
+                is_verified=True
+            )
+            db.add(default_user)
+            db.commit()
+            db.refresh(default_user)
+            logger.info(f"Created default user with ID {user_id}")
+        
         portfolio = Portfolio(
             user_id=user_id,
             name=name,
@@ -170,7 +201,7 @@ async def add_holding(
     stock_symbol: str,
     shares: float,
     average_price: float,
-    purchase_date: Optional[datetime] = None,
+    purchase_date: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """Add a new holding to a portfolio"""
@@ -180,13 +211,24 @@ async def add_holding(
         if not portfolio:
             raise HTTPException(status_code=404, detail="Portfolio not found")
         
+        # Parse purchase_date if provided
+        parsed_purchase_date = None
+        if purchase_date:
+            try:
+                parsed_purchase_date = datetime.fromisoformat(purchase_date.replace('Z', '+00:00'))
+            except ValueError:
+                logger.warning(f"Invalid purchase_date format: {purchase_date}, using current date")
+                parsed_purchase_date = datetime.utcnow()
+        else:
+            parsed_purchase_date = datetime.utcnow()
+        
         # Create holding
         holding = PortfolioHolding(
             portfolio_id=portfolio_id,
             stock_symbol=stock_symbol.upper(),
             shares=shares,
             average_price=average_price,
-            purchase_date=purchase_date or datetime.utcnow()
+            purchase_date=parsed_purchase_date
         )
         
         db.add(holding)
