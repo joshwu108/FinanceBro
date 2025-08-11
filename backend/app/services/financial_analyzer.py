@@ -61,9 +61,10 @@ class FinancialAnalyzer:
         try:
             self.analyst_agent = pipeline(
                 "text-generation", 
-                model="gpt2-xl",  
+                model="gpt2-medium",  
                 torch_dtype=torch.float16,
-                device_map=self.device,
+                device_map="auto" if torch.cuda.is_available() else None,
+                device=self.device
             )
         except Exception as e:
             logger.warning(f"Could not load text generation model: {e}")
@@ -73,8 +74,9 @@ class FinancialAnalyzer:
             self.qa_agent = pipeline(
                 "question-answering",
                 model="deepset/roberta-base-squad2",
-                device_map=self.device,
+                device_map="auto" if torch.cuda.is_available() else None,
                 torch_dtype=torch.float32,
+                device=self.device
             )
         except Exception as e:
             logger.warning(f"Could not load QA model: {e}")
@@ -516,9 +518,9 @@ class FinancialAnalyzer:
             article_text = self.extract_article_text(url)
             context += f"Title: {title}\nSummary: {url}\nText:\n{article_text}\n\n"
 
-        agent_prompt += f"""
-        Context: {context}
-        """
+        #agent_prompt += f"""
+        #Context: {context}
+        #"""
         logger.info(f"successfully generated agent prompt {agent_prompt}")
         try:
             # Check if analyst_agent is available
@@ -526,10 +528,18 @@ class FinancialAnalyzer:
                 logger.warning("Analyst agent not available, returning basic analysis")
                 return f"Basic analysis for {symbol}: Sentiment analysis not available due to model loading issues."
             
-            messages = [{'role': 'user', 'content': agent_prompt}]
-            response = self.analyst_agent(messages, max_new_tokens=256)
-            logger.info(f"successfully generated stock analysis {response}")
-            return response[0]['generated_text'][-1]
+            simple_prompt = f"Stock {symbol} analysis: Based on recent news and market data, what does {symbol} show? Return analysis in complete sentences."
+            response = self.analyst_agent(simple_prompt, max_new_tokens=256, do_sample=True, temperature=0.8)
+            logger.info(f"successfully generated stock analysis for {symbol}")
+            generated_text = response[0]['generated_text']
+
+            # Remove the input prompt from the response
+            if simple_prompt in generated_text:
+                analysis = generated_text.replace(simple_prompt, "").strip()
+            else:
+                analysis = generated_text
+            
+            return f"Stock Analysis for {symbol}: {analysis}"
         except Exception as e:
             logger.error(f"Error generating stock analysis: {str(e)}")
             return f"Error generating stock analysis for {symbol}: {str(e)}"
