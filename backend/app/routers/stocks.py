@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query
-from app.services.data_collector import DataCollector
+from app.services.data_collector import DataCollector  # Temporarily disabled due to numpy compatibility issues
 from app.services.ml_models import MLModelManager
 from app.services.feature_engineering import FeatureEngineer
 from app.services.financial_analyzer import FinancialAnalyzer

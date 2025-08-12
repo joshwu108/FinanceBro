@@ -20,12 +20,19 @@ import requests
 from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
 from bs4 import BeautifulSoup
 from openai import OpenAI
+from langchain_community.llms import OpenAI as LangChainOpenAI
+from langchain.agents import initialize_agent, Tool, AgentType
+import asyncio
 import os
 import torch
 from dotenv import load_dotenv
-load_dotenv()
 
+load_dotenv()
 logger = logging.getLogger(__name__)
+# Set up DeepSeek API key
+if not os.getenv("DEEPSEEK_API_KEY"):
+    logger.warning("DEEPSEEK_API_KEY not found in environment variables")
+
 
 
 @dataclass
@@ -58,6 +65,32 @@ class FinancialAnalyzer:
         self.openai_api_key = openai_api_key
         self.sentiment_analyzer = sentiment_analyzer
         self.device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+        # Use the correct approach for DeepSeek API
+        self.llm = LangChainOpenAI(
+            model="deepseek-chat",
+            openai_api_base="https://api.deepseek.com/v1",
+            openai_api_key=os.getenv("DEEPSEEK_API_KEY"),
+            temperature=0.7
+        )
+        # Create financial analysis tools
+        self.tools = [
+            Tool(
+                name="get_stock_sentiment", 
+                func=self.get_stock_sentiment_sync, 
+                description="Get sentiment analysis for a stock symbol"
+            ),
+            Tool(
+                name="get_market_data", 
+                func=self.get_market_data_sync, 
+                description="Get basic market data for a stock symbol"
+            ),
+            Tool(
+                name="analyze_news", 
+                func=self.analyze_news_sync, 
+                description="Analyze news articles for a stock symbol"
+            )
+        ]
+        self.headmaster_agent = initialize_agent(self.tools, self.llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True)
         try:
             self.analyst_agent = pipeline(
                 "text-generation", 
@@ -84,6 +117,154 @@ class FinancialAnalyzer:
             
         if openai_api_key:
             openai.api_key = openai_api_key
+    
+    def get_stock_sentiment_sync(self, symbol: str) -> str:
+        """Synchronous version of stock sentiment analysis"""
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                sentiment_data = loop.run_until_complete(self.get_stock_sentiment(symbol, 5))
+                
+                if not sentiment_data:
+                    return f"No sentiment data available for {symbol}"
+                
+                # Calculate overall sentiment
+                positive_count = 0
+                negative_count = 0
+                neutral_count = 0
+                total_score = 0.0
+                
+                for item in sentiment_data:
+                    headline_sentiment = item.get('headline_sentiment', 'neutral')
+                    if headline_sentiment.lower() in ['positive', 'pos']:
+                        positive_count += 1
+                        total_score += item.get('headline_score', 0)
+                    elif headline_sentiment.lower() in ['negative', 'neg']:
+                        negative_count += 1
+                        total_score -= item.get('headline_score', 0)
+                    else:
+                        neutral_count += 1
+                
+                # Determine overall sentiment
+                total_articles = len(sentiment_data)
+                if total_articles == 0:
+                    return f"No sentiment data available for {symbol}"
+                
+                if positive_count > negative_count:
+                    overall_sentiment = "Positive"
+                    confidence = positive_count / total_articles
+                elif negative_count > positive_count:
+                    overall_sentiment = "Negative"
+                    confidence = negative_count / total_articles
+                else:
+                    overall_sentiment = "Neutral"
+                    confidence = neutral_count / total_articles
+                
+                # Format the response
+                sentiment_analysis = f"""
+                Sentiment Analysis for {symbol}:
+                
+                Overall Sentiment: {overall_sentiment} (Confidence: {confidence:.1%})
+                
+                Breakdown:
+                - Positive Articles: {positive_count}
+                - Negative Articles: {negative_count}
+                - Neutral Articles: {neutral_count}
+                - Total Articles Analyzed: {total_articles}
+                
+                Recent Headlines:
+                """
+                
+                # Add recent headlines
+                for i, item in enumerate(sentiment_data[:3], 1):
+                    title = item.get('title', 'No title')
+                    sentiment = item.get('headline_sentiment', 'neutral')
+                    sentiment_analysis += f"{i}. {title} ({sentiment})\n"
+                
+                return sentiment_analysis
+                
+            finally:
+                loop.close()
+                
+        except Exception as e:
+            logger.error(f"Error getting sentiment for {symbol}: {str(e)}")
+            return f"Error retrieving sentiment for {symbol}: {str(e)}"
+    
+    def get_market_data_sync(self, symbol: str) -> str:
+        """Synchronous version of market data retrieval"""
+        try:
+            import yfinance as yf
+            stock = yf.Ticker(symbol)
+            info = stock.info
+            hist = stock.history(period="5d")
+            
+            if hist.empty:
+                return f"No market data available for {symbol}"
+            
+            # Extract key metrics
+            current_price = hist['Close'].iloc[-1]
+            previous_price = hist['Close'].iloc[-2] if len(hist) > 1 else current_price
+            price_change = current_price - previous_price
+            price_change_percent = (price_change / previous_price) * 100 if previous_price != 0 else 0
+            
+            volume = hist['Volume'].iloc[-1]
+            avg_volume = hist['Volume'].mean()
+            
+            # Get additional info
+            market_cap = info.get('marketCap', 'N/A')
+            pe_ratio = info.get('trailingPE', 'N/A')
+            dividend_yield = info.get('dividendYield', 'N/A')
+            
+            # Format the response
+            market_cap_str = f"${market_cap:,}" if isinstance(market_cap, (int, float)) else 'N/A'
+            pe_ratio_str = f"{pe_ratio:.2f}" if isinstance(pe_ratio, (int, float)) else 'N/A'
+            dividend_yield_str = f"{dividend_yield:.2%}" if isinstance(dividend_yield, (int, float)) else 'N/A'
+            
+            market_data = f"""
+            Market Data for {symbol}:
+            
+            Price Information:
+            - Current Price: ${current_price:.2f}
+            - Price Change: ${price_change:.2f} ({price_change_percent:+.2f}%)
+            - Previous Close: ${previous_price:.2f}
+            
+            Volume:
+            - Current Volume: {volume:,}
+            - Average Volume: {avg_volume:,.0f}
+            
+            Key Metrics:
+            - Market Cap: {market_cap_str}
+            - P/E Ratio: {pe_ratio_str}
+            - Dividend Yield: {dividend_yield_str}
+            
+            Data Source: Yahoo Finance
+            """
+            
+            return market_data
+            
+        except Exception as e:
+            logger.error(f"Error getting market data for {symbol}: {str(e)}")
+            return f"Error retrieving market data for {symbol}: {str(e)}"
+    
+    def analyze_news_sync(self, symbol: str) -> str:
+        """Synchronous version of news analysis"""
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                news_data = loop.run_until_complete(self.get_stock_news(symbol, 5))
+                news_analysis = ""
+                for article in news_data:
+                    news_analysis += f"{article['title']}\n{article['summary']}\n\n"
+                return news_analysis
+            finally:
+                loop.close()
+            
+            #return f"News analysis for {symbol}: Recent articles show mixed sentiment with focus on earnings and market trends."
+        except Exception as e:
+            return f"Error analyzing news for {symbol}: {str(e)}"
     
     def analyze_trend(
         self, 
@@ -523,23 +704,32 @@ class FinancialAnalyzer:
         #"""
         logger.info(f"successfully generated agent prompt {agent_prompt}")
         try:
-            # Check if analyst_agent is available
-            if self.analyst_agent is None:
-                logger.warning("Analyst agent not available, returning basic analysis")
+            # Use the headmaster agent for analysis
+            if self.headmaster_agent is None:
+                logger.warning("Headmaster agent not available, returning basic analysis")
                 return f"Basic analysis for {symbol}: Sentiment analysis not available due to model loading issues."
             
-            simple_prompt = f"Stock {symbol} analysis: Based on recent news and market data, what does {symbol} show? Return analysis in complete sentences."
-            response = self.analyst_agent(simple_prompt, max_new_tokens=256, do_sample=True, temperature=0.8)
-            logger.info(f"successfully generated stock analysis for {symbol}")
-            generated_text = response[0]['generated_text']
-
-            # Remove the input prompt from the response
-            if simple_prompt in generated_text:
-                analysis = generated_text.replace(simple_prompt, "").strip()
-            else:
-                analysis = generated_text
+            # Create a comprehensive prompt for the agent
+            analysis_prompt = f"""
+            You are a financial analyst. Analyze the stock {symbol} based on the following context and provide a detailed analysis.
             
-            return f"Stock Analysis for {symbol}: {analysis}"
+            Context: {context}
+            
+            Please provide a comprehensive analysis including:
+            1. Overall sentiment (Positive/Negative/Neutral)
+            2. Key drivers affecting the stock
+            3. Recent news impact
+            4. Market outlook
+            5. Risk factors
+            
+            Format your response as a professional financial analysis report.
+            """
+            
+            # Use the headmaster agent to generate analysis
+            response = self.headmaster_agent.run(analysis_prompt)
+            logger.info(f"Successfully generated stock analysis for {symbol} using DeepSeek agent")
+            
+            return f"Stock Analysis for {symbol}:\n\n{response}"
         except Exception as e:
             logger.error(f"Error generating stock analysis: {str(e)}")
             return f"Error generating stock analysis for {symbol}: {str(e)}"
