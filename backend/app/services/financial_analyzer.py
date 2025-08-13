@@ -25,6 +25,7 @@ from langchain_core.tools import tool, Tool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.agents import initialize_agent, AgentType, create_tool_calling_agent, AgentExecutor
 from langchain.memory import ConversationBufferMemory
+from langchain_openai import ChatOpenAI
 import asyncio
 import os
 import torch
@@ -42,10 +43,21 @@ def get_stock_sentiment_sync(query: str) -> str:
     try:
         parts = query.split()
         symbol = parts[0] if parts else "AAPL"
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        
+        # Use yfinance directly for sentiment analysis
+        import yfinance as yf
+        stock = yf.Ticker(symbol)
+        
+        # Get recent news headlines
         try:
-            sentiment_data = loop.run_until_complete(FinancialAnalyzer.get_stock_sentiment(symbol, 5))
+            news = stock.news
+            if news:
+                headlines = [item.get('title', '') for item in news[:5]]
+                return f"Recent headlines for {symbol}: {'; '.join(headlines)}"
+            else:
+                return f"No recent news available for {symbol}"
+        except:
+            return f"Could not fetch news for {symbol}"
                 
             if not sentiment_data:
                 return f"No sentiment data available for {symbol}"
@@ -177,18 +189,24 @@ def analyze_news_sync(query: str) -> str:
     try:
         parts = query.split()
         symbol = parts[0] if parts else "AAPL"
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        
+        # Use yfinance directly for news
+        import yfinance as yf
+        stock = yf.Ticker(symbol)
+        
         try:
-            news_data = loop.run_until_complete(FinancialAnalyzer.get_stock_news(symbol, 5))
-            news_analysis = ""
-            for article in news_data:
-                news_analysis += f"{article['title']}\n{article['summary']}\n\n"
-            return news_analysis
-        finally:
-            loop.close()
+            news = stock.news
+            if news:
+                news_summary = f"Recent news for {symbol}:\n"
+                for i, article in enumerate(news[:3], 1):
+                    title = article.get('title', 'No title')
+                    news_summary += f"{i}. {title}\n"
+                return news_summary
+            else:
+                return f"No recent news available for {symbol}"
+        except:
+            return f"Could not fetch news for {symbol}"
             
-        #return f"News analysis for {symbol}: Recent articles show mixed sentiment with focus on earnings and market trends."
     except Exception as e:
         return f"Error analyzing news for {symbol}: {str(e)}"
 
@@ -245,10 +263,11 @@ class FinancialAnalyzer:
         ])
         self.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
         #self.memory = MemorySaver()
-        self.llm = LangChainOpenAI(
+        self.llm = ChatOpenAI(
+            #model="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
             model="lgai/exaone-3-5-32b-instruct",
             openai_api_base="https://api.together.xyz/v1",
-            openai_api_key=os.getenv("DEEPSEEK_API_KEY"),  
+            openai_api_key=os.getenv("TOGETHER_API_KEY"),  
             temperature=0.7
         )
         # Create financial analysis tools
@@ -265,6 +284,7 @@ class FinancialAnalyzer:
             prompt=self.prompt,
             verbose=True,
             memory=self.memory,
+            handle_parsing_errors=True,
         )
         try:
             self.analyst_agent = pipeline(
@@ -731,7 +751,7 @@ class FinancialAnalyzer:
             
             # Create a comprehensive prompt for the agent
             analysis_prompt = f"""
-            You are a financial analyst. Analyze the stock {symbol} based on the following context and provide a detailed analysis using the provided tools.
+            You are a financial analyst. Analyze the stock {symbol} based on the following context and provide a comprehensive analysis using the provided tools.
             
             Please provide a comprehensive analysis including:
             1. Overall sentiment (Positive/Negative/Neutral)
@@ -744,14 +764,14 @@ class FinancialAnalyzer:
             """
             
             # Use the headmaster agent to generate analysis
-            response = self.agent_executor.invoke({"input": [{"role": "user", "content": analysis_prompt}]})
+            response = self.agent_executor.run(analysis_prompt)
             #response = self.togetherai_chat_completion(messages=[
             #    {"role": "system", "content": "You are a financial analyst."},
             #    {"role": "user", "content": analysis_prompt}
             #])
             logger.info(f"Successfully generated stock analysis for {symbol} using DeepSeek agent")
             logger.info(f"Response: {response}")
-            return f"Stock Analysis for {symbol}:\n\n{response['output']}"
+            return response
         except Exception as e:
             logger.error(f"Error generating stock analysis: {str(e)}")
             return f"Error generating stock analysis for {symbol}: {str(e)}"
