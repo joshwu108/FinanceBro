@@ -199,6 +199,16 @@ class ApiService {
     return this.request<RealTimeData>(`/stocks/${symbol}/realtime`);
   }
 
+  async getPopularStocks(): Promise<{ symbol: string; name: string; price: number; change: string; volume: string; marketCap: string }[]> {
+    return this.request<{ symbol: string; name: string; price: number; change: string; volume: string; marketCap: string }[]>('/stocks/popular');
+  }
+
+  async searchStocks(query: string): Promise<{ symbol: string; name: string; exchange: string }[]> {
+    const params = new URLSearchParams();
+    params.append('q', query);
+    return this.request<{ symbol: string; name: string; exchange: string }[]>(`/stocks/search?${params}`);
+  }
+
   async getStockPrediction(
     symbol: string,
     model: string = 'random_forest'
