@@ -23,6 +23,85 @@ async def get_stocks():
         "message": "Available stocks for prediction"
     }
 
+@router.get("/popular")
+async def get_popular_stocks():
+    """Get popular stocks with real-time data"""
+    try:
+        popular_symbols = [
+            "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA", "META", "BRK-B", 
+            "UNH", "JNJ", "JPM", "V", "PG", "HD", "MA", "DIS", "PYPL", "NFLX",
+            "ADBE", "CRM", "INTC", "ORCL", "CSCO", "PFE", "ABT", "KO", "PEP",
+            "TMO", "AVGO", "COST", "WMT", "MRK", "ABBV", "ACN", "LLY", "DHR"
+        ]
+        
+        popular_stocks = []
+        
+        for symbol in popular_symbols[:20]: 
+            try:
+                stock = yf.Ticker(symbol)
+                info = stock.info
+                hist = stock.history(period="1d")
+                
+                if not hist.empty:
+                    current_price = hist['Close'].iloc[-1]
+                    previous_price = hist['Open'].iloc[0]
+                    price_change = current_price - previous_price
+                    price_change_percent = (price_change / previous_price) * 100
+                    
+                    change_str = f"{price_change_percent:+.2f}%"
+                    
+                    volume = info.get('volume', 0)
+                    market_cap = info.get('marketCap', 0)
+                    
+                    volume_str = f"{volume/1000000:.1f}M" if volume > 1000000 else f"{volume/1000:.1f}K"
+                    market_cap_str = f"{market_cap/1000000000:.1f}B" if market_cap > 1000000000 else f"{market_cap/1000000:.1f}M"
+                    
+                    popular_stocks.append({
+                        "symbol": symbol,
+                        "name": info.get('longName', symbol),
+                        "price": round(current_price, 2),
+                        "change": change_str,
+                        "volume": volume_str,
+                        "marketCap": market_cap_str
+                    })
+            except Exception as e:
+                logger.warning(f"Error fetching data for {symbol}: {e}")
+                continue
+        
+        return popular_stocks
+        
+    except Exception as e:
+        logger.error(f"Error fetching popular stocks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/search")
+async def search_stocks(q: str = Query(..., description="Search query")):
+    """Search for stocks by symbol or company name"""
+    try:
+        if len(q) < 2:
+            return []
+        
+        search_results = yf.Tickers(q)
+        
+        stocks = []
+        for symbol in search_results.tickers[:10]: 
+            try:
+                info = symbol.info
+                stocks.append({
+                    "symbol": symbol.ticker,
+                    "name": info.get('longName', info.get('shortName', symbol.ticker)),
+                    "exchange": info.get('exchange', 'Unknown')
+                })
+            except Exception as e:
+                logger.warning(f"Error getting info for {symbol.ticker}: {e}")
+                continue
+        
+        return stocks
+        
+    except Exception as e:
+        logger.error(f"Error searching stocks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/{symbol}/realtime")
 async def get_stock_realtime(symbol: str):
     """Get real-time stock data"""
