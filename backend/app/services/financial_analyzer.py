@@ -37,92 +37,60 @@ logger = logging.getLogger(__name__)
 if not os.getenv("DEEPSEEK_API_KEY"):
     logger.warning("DEEPSEEK_API_KEY (Together AI key) not found in environment variables")
 
+
 @tool
-def get_stock_sentiment_sync(query: str) -> str:
-    """Synchronous version of stock sentiment analysis"""
+def extract_article_text(article_url: str):
+    """Extract the text of the article using an agent"""
     try:
-        parts = query.split()
-        symbol = parts[0] if parts else "AAPL"
-        
-        # Use yfinance directly for sentiment analysis
-        import yfinance as yf
-        stock = yf.Ticker(symbol)
-        
-        # Get recent news headlines
-        try:
-            news = stock.news
-            if news:
-                headlines = [item.get('title', '') for item in news[:5]]
-                return f"Recent headlines for {symbol}: {'; '.join(headlines)}"
-            else:
-                return f"No recent news available for {symbol}"
-        except:
-            return f"Could not fetch news for {symbol}"
-                
-            if not sentiment_data:
-                return f"No sentiment data available for {symbol}"
-                
-            # Calculate overall sentiment
-            positive_count = 0
-            negative_count = 0
-            neutral_count = 0
-            total_score = 0.0
-                
-            for item in sentiment_data:
-                headline_sentiment = item.get('headline_sentiment', 'neutral')
-                if headline_sentiment.lower() in ['positive', 'pos']:
-                    positive_count += 1
-                    total_score += item.get('headline_score', 0)
-                elif headline_sentiment.lower() in ['negative', 'neg']:
-                    negative_count += 1
-                    total_score -= item.get('headline_score', 0)
-                else:
-                    neutral_count += 1
-                
-            # Determine overall sentiment
-            total_articles = len(sentiment_data)
-            if total_articles == 0:
-                return f"No sentiment data available for {symbol}"
-                
-            if positive_count > negative_count:
-                overall_sentiment = "Positive"
-                confidence = positive_count / total_articles
-            elif negative_count > positive_count:
-                overall_sentiment = "Negative"
-                confidence = negative_count / total_articles
-            else:
-                overall_sentiment = "Neutral"
-                confidence = neutral_count / total_articles
-                
-            # Format the response
-            sentiment_analysis = f"""
-            Sentiment Analysis for {symbol}:
-                
-            Overall Sentiment: {overall_sentiment} (Confidence: {confidence:.1%})
-            
-            Breakdown:
-            - Positive Articles: {positive_count}
-            - Negative Articles: {negative_count}
-            - Neutral Articles: {neutral_count}
-            - Total Articles Analyzed: {total_articles}
-                
-            Recent Headlines:
-            """
-                
-             # Add recent headlines
-            for i, item in enumerate(sentiment_data[:3], 1):
-                title = item.get('title', 'No title')
-                sentiment = item.get('headline_sentiment', 'neutral')
-                sentiment_analysis += f"{i}. {title} ({sentiment})\n"
-                
-            return sentiment_analysis
-                
-        finally:
-            loop.close()
-                
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+
+        response = requests.get(article_url, headers=headers)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        for script_or_style in soup(['script', 'style']):
+            script_or_style.extract()
+
+        paragraphs = soup.find_all('p')
+        article_text = ' '.join([p.get_text() for p in paragraphs])
+        return article_text
+
     except Exception as e:
-        logger.error(f"Error getting sentiment for {symbol}: {str(e)}")
-        return f"Error retrieving sentiment for {symbol}: {str(e)}"
+        logger.error(f"Error extracting article text: {str(e)}")
+        return None
+
+@tool
+def analyze_sentiment(text: str) -> List[Dict]:
+    """Analyze sentiment of financial texts"""
+    model_configs = {
+        'general': 'cardiffnlp/twitter-roberta-base-sentiment-latest',
+        'financial': 'ProsusAI/finbert'
+    }
+    model_name = model_configs.get('financial')
+    model = pipeline('sentiment-analysis', model=model_name, device=0 if torch.cuda.is_available() else -1)
+    try:
+        if not model:
+            return []
+            
+        if not text or len(text.strip()) == 0:
+            return {'text': text, 'sentiment': 'neutral', 'score': 0.0}
+                
+        # Truncate text if too long
+        if len(text) > 500:
+            text = text[:500]
+            
+        result = model(text)
+        return {
+            'text': text[:100],
+            'sentiment': result[0]['label'],
+            'score': result[0]['score']
+        }
+            
+    except Exception as e:
+        logger.error(f"Error in sentiment analysis: {str(e)}")
+        return []
     
 @tool
 def get_market_data_sync(query: str) -> str:
@@ -189,19 +157,19 @@ def analyze_news_sync(query: str) -> str:
     try:
         parts = query.split()
         symbol = parts[0] if parts else "AAPL"
-        
-        # Use yfinance directly for news
-        import yfinance as yf
         stock = yf.Ticker(symbol)
         
         try:
             news = stock.news
             if news:
-                news_summary = f"Recent news for {symbol}:\n"
-                for i, article in enumerate(news[:3], 1):
-                    title = article.get('title', 'No title')
-                    news_summary += f"{i}. {title}\n"
-                return news_summary
+                news_info = []
+                for article in news[:5]:
+                    news_info.append({
+                        'title': article.get('title', ''),
+                        'summary': article.get('summary', ''),
+                        'url': article.get('link', ''),
+                    })
+                return news_info
             else:
                 return f"No recent news available for {symbol}"
         except:
@@ -270,9 +238,9 @@ class FinancialAnalyzer:
             openai_api_key=os.getenv("TOGETHER_API_KEY"),  
             temperature=0.7
         )
-        # Create financial analysis tools
         self.tools = [
-            get_stock_sentiment_sync,
+            extract_article_text,
+            analyze_sentiment,
             get_market_data_sync,
             analyze_news_sync,
         ]
@@ -285,6 +253,8 @@ class FinancialAnalyzer:
             verbose=True,
             memory=self.memory,
             handle_parsing_errors=True,
+            max_iterations=3,
+            early_stopping_method="generate",
         )
         try:
             self.analyst_agent = pipeline(
@@ -312,351 +282,6 @@ class FinancialAnalyzer:
             
         if openai_api_key:
             openai.api_key = openai_api_key
-    
-    def analyze_trend(
-        self, 
-        stock_data: pd.DataFrame, 
-        technical_indicators: pd.DataFrame,
-        ml_prediction: float,
-        symbol: str
-    ) -> TrendAnalysis:
-        """
-        Analyze market trend using technical indicators and ML predictions
-        
-        Args:
-            stock_data: OHLCV data
-            technical_indicators: Calculated technical indicators
-            ml_prediction: ML model prediction (0-1 probability)
-            symbol: Stock symbol
-        
-        Returns:
-            TrendAnalysis object
-        """
-        try:
-            # Calculate trend indicators
-            current_price = stock_data['close'].iloc[-1]
-            sma_20 = technical_indicators['sma_20'].iloc[-1]
-            sma_50 = technical_indicators['sma_50'].iloc[-1]
-            rsi = technical_indicators['rsi'].iloc[-1]
-            macd = technical_indicators['macd'].iloc[-1]
-            macd_signal = technical_indicators['macd_signal'].iloc[-1]
-            
-            # Price vs moving averages
-            price_above_sma20 = current_price > sma_20
-            price_above_sma50 = current_price > sma_50
-            sma20_above_sma50 = sma_20 > sma_50
-            
-            # RSI analysis
-            rsi_bullish = rsi > 50
-            rsi_oversold = rsi < 30
-            rsi_overbought = rsi > 70
-            
-            # MACD analysis
-            macd_bullish = macd > macd_signal
-            macd_positive = macd > 0
-            
-            # Trend determination
-            bullish_signals = 0
-            bearish_signals = 0
-            
-            if price_above_sma20:
-                bullish_signals += 1
-            else:
-                bearish_signals += 1
-                
-            if price_above_sma50:
-                bullish_signals += 1
-            else:
-                bearish_signals += 1
-                
-            if sma20_above_sma50:
-                bullish_signals += 1
-            else:
-                bearish_signals += 1
-                
-            if rsi_bullish:
-                bullish_signals += 1
-            else:
-                bearish_signals += 1
-                
-            if macd_bullish:
-                bullish_signals += 1
-            else:
-                bearish_signals += 1
-                
-            if macd_positive:
-                bullish_signals += 1
-            else:
-                bearish_signals += 1
-            
-            # ML prediction influence
-            if ml_prediction > 0.6:
-                bullish_signals += 2
-            elif ml_prediction < 0.4:
-                bearish_signals += 2
-            
-            # Determine trend
-            total_signals = bullish_signals + bearish_signals
-            if total_signals == 0:
-                trend = "neutral"
-                confidence = 0.5
-            elif bullish_signals > bearish_signals:
-                trend = "bullish"
-                confidence = bullish_signals / total_signals
-            else:
-                trend = "bearish"
-                confidence = bearish_signals / total_signals
-            
-            # Determine strength
-            if confidence > 0.7:
-                strength = "strong"
-            elif confidence > 0.5:
-                strength = "moderate"
-            else:
-                strength = "weak"
-            
-            # Determine duration based on moving averages
-            if price_above_sma50 and sma20_above_sma50:
-                duration = "long-term"
-            elif price_above_sma20:
-                duration = "medium-term"
-            else:
-                duration = "short-term"
-            
-            # Calculate key levels
-            key_levels = self._calculate_key_levels(stock_data, technical_indicators)
-            
-            # Generate reasoning
-            reasoning = self._generate_trend_reasoning(
-                trend, strength, duration, current_price, 
-                sma_20, sma_50, rsi, macd, ml_prediction
-            )
-            
-            return TrendAnalysis(
-                trend=trend,
-                confidence=confidence,
-                strength=strength,
-                duration=duration,
-                key_levels=key_levels,
-                reasoning=reasoning
-            )
-            
-        except Exception as e:
-            logger.error(f"Error analyzing trend: {str(e)}")
-            return TrendAnalysis(
-                trend="neutral",
-                confidence=0.5,
-                strength="weak",
-                duration="short-term",
-                key_levels=[],
-                reasoning=f"Error in analysis: {str(e)}"
-            )
-    
-    def generate_trading_advice(
-        self, 
-        trend_analysis: TrendAnalysis,
-        stock_data: pd.DataFrame,
-        technical_indicators: pd.DataFrame,
-        ml_prediction: float,
-        symbol: str
-    ) -> TradingAdvice:
-        """
-        Generate trading advice based on trend analysis
-        
-        Args:
-            trend_analysis: Trend analysis result
-            stock_data: OHLCV data
-            technical_indicators: Technical indicators
-            ml_prediction: ML prediction
-            symbol: Stock symbol
-        
-        Returns:
-            TradingAdvice object
-        """
-        try:
-            current_price = stock_data['close'].iloc[-1]
-            
-            # Determine action based on trend and confidence
-            if trend_analysis.trend == "bullish" and trend_analysis.confidence > 0.6:
-                action = "buy"
-                confidence = trend_analysis.confidence
-            elif trend_analysis.trend == "bearish" and trend_analysis.confidence > 0.6:
-                action = "sell"
-                confidence = trend_analysis.confidence
-            elif trend_analysis.confidence < 0.4:
-                action = "wait"
-                confidence = 1 - trend_analysis.confidence
-            else:
-                action = "hold"
-                confidence = 0.5
-            
-            # Determine risk level
-            if trend_analysis.strength == "strong" and trend_analysis.confidence > 0.7:
-                risk_level = "low"
-            elif trend_analysis.strength == "moderate":
-                risk_level = "medium"
-            else:
-                risk_level = "high"
-            
-            # Calculate target price and stop loss
-            target_price = None
-            stop_loss = None
-            
-            if action == "buy":
-                # Target: 5-10% above current price
-                target_price = current_price * 1.07
-                # Stop loss: 3-5% below current price
-                stop_loss = current_price * 0.96
-            elif action == "sell":
-                # Target: 5-10% below current price
-                target_price = current_price * 0.93
-                # Stop loss: 3-5% above current price
-                stop_loss = current_price * 1.04
-            
-            # Generate reasoning
-            reasoning = self._generate_advice_reasoning(
-                action, trend_analysis, current_price, ml_prediction
-            )
-            
-            return TradingAdvice(
-                action=action,
-                confidence=confidence,
-                risk_level=risk_level,
-                target_price=target_price,
-                stop_loss=stop_loss,
-                reasoning=reasoning,
-                timeframe="1-3 days"
-            )
-            
-        except Exception as e:
-            logger.error(f"Error generating trading advice: {str(e)}")
-            return TradingAdvice(
-                action="hold",
-                confidence=0.5,
-                risk_level="high",
-                reasoning=f"Error generating advice: {str(e)}"
-            )
-    
-    def _calculate_key_levels(
-        self, 
-        stock_data: pd.DataFrame, 
-        technical_indicators: pd.DataFrame
-    ) -> List[float]:
-        """Calculate key support and resistance levels"""
-        try:
-            current_price = stock_data['close'].iloc[-1]
-            levels = []
-            
-            # Add moving averages as key levels
-            sma_20 = technical_indicators['sma_20'].iloc[-1]
-            sma_50 = technical_indicators['sma_50'].iloc[-1]
-            sma_200 = technical_indicators['sma_200'].iloc[-1]
-            
-            if not pd.isna(sma_20):
-                levels.append(round(sma_20, 2))
-            if not pd.isna(sma_50):
-                levels.append(round(sma_50, 2))
-            if not pd.isna(sma_200):
-                levels.append(round(sma_200, 2))
-            
-            # Add recent highs and lows
-            recent_high = stock_data['high'].tail(20).max()
-            recent_low = stock_data['low'].tail(20).min()
-            
-            levels.append(round(recent_high, 2))
-            levels.append(round(recent_low, 2))
-            
-            # Remove duplicates and sort
-            levels = sorted(list(set(levels)))
-            
-            return levels
-            
-        except Exception as e:
-            logger.error(f"Error calculating key levels: {str(e)}")
-            return []
-    
-    def _generate_trend_reasoning(
-        self, 
-        trend: str, 
-        strength: str, 
-        duration: str,
-        current_price: float,
-        sma_20: float,
-        sma_50: float,
-        rsi: float,
-        macd: float,
-        ml_prediction: float
-    ) -> str:
-        """Generate human-readable trend reasoning"""
-        
-        reasoning_parts = []
-        
-        # Price vs moving averages
-        if current_price > sma_20:
-            reasoning_parts.append("Price is above 20-day moving average")
-        else:
-            reasoning_parts.append("Price is below 20-day moving average")
-            
-        if current_price > sma_50:
-            reasoning_parts.append("Price is above 50-day moving average")
-        else:
-            reasoning_parts.append("Price is below 50-day moving average")
-        
-        # RSI analysis
-        if rsi > 70:
-            reasoning_parts.append("RSI indicates overbought conditions")
-        elif rsi < 30:
-            reasoning_parts.append("RSI indicates oversold conditions")
-        else:
-            reasoning_parts.append(f"RSI at {rsi:.1f} indicates neutral momentum")
-        
-        # MACD analysis
-        if macd > 0:
-            reasoning_parts.append("MACD is positive, indicating upward momentum")
-        else:
-            reasoning_parts.append("MACD is negative, indicating downward momentum")
-        
-        # ML prediction
-        if ml_prediction > 0.6:
-            reasoning_parts.append("ML model predicts bullish movement")
-        elif ml_prediction < 0.4:
-            reasoning_parts.append("ML model predicts bearish movement")
-        else:
-            reasoning_parts.append("ML model shows neutral prediction")
-        
-        # Overall trend
-        reasoning_parts.append(f"Overall trend is {trend} with {strength} {duration} momentum")
-        
-        return ". ".join(reasoning_parts) + "."
-    
-    def _generate_advice_reasoning(
-        self,
-        action: str,
-        trend_analysis: TrendAnalysis,
-        current_price: float,
-        ml_prediction: float
-    ) -> str:
-        """Generate trading advice reasoning"""
-        
-        if action == "buy":
-            return f"Strong {trend_analysis.trend} signals with {trend_analysis.confidence:.1%} confidence. ML model predicts {ml_prediction:.1%} probability of upward movement. Consider buying with proper risk management."
-        elif action == "sell":
-            return f"Strong {trend_analysis.trend} signals with {trend_analysis.confidence:.1%} confidence. ML model predicts {ml_prediction:.1%} probability of upward movement. Consider selling or reducing position."
-        elif action == "hold":
-            return f"Mixed signals with {trend_analysis.confidence:.1%} confidence. ML model shows {ml_prediction:.1%} probability. Best to hold current position and monitor for clearer signals."
-        else:  # wait
-            return f"Low confidence signals ({trend_analysis.confidence:.1%}). ML model shows {ml_prediction:.1%} probability. Wait for clearer market direction before taking action."
-    
-    def get_market_sentiment(self, symbol: str) -> Dict[str, Any]:
-        """Get overall market sentiment for a stock"""
-        # This could integrate with news APIs, social media sentiment, etc.
-        return {
-            "symbol": symbol,
-            "sentiment": "neutral",
-            "confidence": 0.5,
-            "factors": ["technical_analysis", "ml_prediction"],
-            "last_updated": datetime.now().isoformat()
-        }
     
     async def get_stock_news(self, symbol: str, news_count: int = 10):
         """Get news for a stock with better error handling"""
@@ -719,28 +344,6 @@ class FinancialAnalyzer:
             })
         return collective_sentiment
     
-    def togetherai_chat_completion(self, messages, model="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free", max_tokens=512, temperature=0.7):
-        api_key = os.getenv("DEEPSEEK_API_KEY")
-        if not api_key:
-            raise Exception("DEEPSEEK_API_KEY missing")
-
-        url = "https://api.together.xyz/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature
-        }
-
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        data = response.json()
-        return data['choices'][0]['message']['content']
-    
     async def get_stock_analysis(self, symbol: str):
         """Financial analysit agent using scraped data from yfinance"""
         try:
@@ -749,29 +352,37 @@ class FinancialAnalyzer:
                 logger.warning("Headmaster agent not available, returning basic analysis")
                 return f"Basic analysis for {symbol}: Sentiment analysis not available due to model loading issues."
             
-            # Create a comprehensive prompt for the agent
+            # Create a prompt that forces tool usage
             analysis_prompt = f"""
-            You are a financial analyst. Analyze the stock {symbol} based on the following context and provide a comprehensive analysis using the provided tools.
+            You are a financial analyst. You MUST use the available tools to analyze {symbol}.
             
-            Please provide a comprehensive analysis including:
-            1. Overall sentiment (Positive/Negative/Neutral)
-            2. Key drivers affecting the stock
-            3. Recent news impact
-            4. Market outlook
-            5. Risk factors
+            Follow these steps:
+            1. Use get_market_data_sync to get current market data for {symbol}
+            2. Use analyze_news_sync to get recent news for {symbol}
+            3. Use analyze_sentiment to analyze the sentiment of the news
+            4. Use extract_article_text to extract the text of the article
+            5. Based on the tool results, provide a brief analysis
             
-            Format your response as a professional financial analysis report.
+            NEVER generate analysis that is hypothetical and not grounded on real information.
+            DO NOT generate analysis without using the tools first.
             """
             
-            # Use the headmaster agent to generate analysis
-            response = self.agent_executor.run(analysis_prompt)
-            #response = self.togetherai_chat_completion(messages=[
-            #    {"role": "system", "content": "You are a financial analyst."},
-            #    {"role": "user", "content": analysis_prompt}
-            #])
-            logger.info(f"Successfully generated stock analysis for {symbol} using DeepSeek agent")
-            logger.info(f"Response: {response}")
-            return response
+            try:
+                # Try agent first
+                response = self.agent_executor.run(analysis_prompt)
+                logger.info(f"Successfully generated stock analysis for {symbol} using agent")
+                return response
+            except Exception as agent_error:
+                logger.warning(f"Agent failed, using direct LLM: {agent_error}")
+                # Fallback to direct LLM call with simpler prompt
+                fallback_prompt = f"""
+                Provide a brief financial analysis for {symbol} stock.
+                Include: sentiment, key factors, and outlook.
+                Keep it concise and professional.
+                """
+                direct_response = self.llm.invoke(fallback_prompt)
+                logger.info(f"Successfully generated stock analysis for {symbol} using direct LLM")
+                return direct_response.content
         except Exception as e:
             logger.error(f"Error generating stock analysis: {str(e)}")
             return f"Error generating stock analysis for {symbol}: {str(e)}"
