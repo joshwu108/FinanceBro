@@ -31,6 +31,12 @@ datasets==2.16.1
 accelerate==0.25.0
 diffusers==0.24.0
 
+# LangChain
+langchain
+langchain-community
+langchain-core
+langchain-openai
+
 # Data Processing
 requests==2.31.0
 python-dotenv==1.0.0
@@ -43,7 +49,8 @@ lxml==4.9.3
 websockets==12.0
 python-socketio==5.10.0
 httpx==0.25.2
-openai==1.6.1
+openai==1.12.0
+langchain-openai==0.1.0
 
 # Development
 pytest==7.4.3

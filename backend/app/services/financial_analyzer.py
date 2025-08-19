@@ -2,11 +2,13 @@
 Financial Analysis Service
 Interprets ML predictions and provides actionable financial advice
 """
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Any
 import logging
-import json
 from datetime import datetime, timedelta
 import openai
 from dataclasses import dataclass
@@ -14,7 +16,6 @@ import yfinance as yf
 from fastapi import HTTPException
 from app.services.sentiment_analyzer import sentiment_analyzer
 import time
-import re
 import streamlit as st
 import requests
 from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
@@ -25,8 +26,10 @@ from langchain_core.tools import tool, Tool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.agents import initialize_agent, AgentType, create_tool_calling_agent, AgentExecutor
 from langchain.memory import ConversationBufferMemory
+from app.services.ml_models import ml_manager
+from app.services.data_collector import data_collector
+from app.services.feature_engineering import feature_engineer
 from langchain_openai import ChatOpenAI
-import asyncio
 import os
 import torch
 from dotenv import load_dotenv
@@ -410,339 +413,465 @@ class FinancialAnalyzer:
             logger.error(f"Error extracting article text: {str(e)}")
             return None
 
-    def analyze_trend(
-        self, 
-        stock_data: pd.DataFrame, 
-        technical_indicators: pd.DataFrame,
-        ml_prediction: float,
-        symbol: str
-    ) -> TrendAnalysis:
-        """
-        Analyze market trend using technical indicators and ML predictions
+@tool
+def analyze_trend(
+    stock_data: pd.DataFrame, 
+    technical_indicators: pd.DataFrame,
+    ml_prediction: float,
+    symbol: str
+) -> TrendAnalysis:
+    """
+    Analyze market trend using technical indicators and ML predictions
         
-        Args:
-            stock_data: OHLCV data
-            technical_indicators: Calculated technical indicators
-            ml_prediction: ML model prediction (0-1 probability)
-            symbol: Stock symbol
+    Args:
+        stock_data: OHLCV data
+        technical_indicators: Calculated technical indicators
+        ml_prediction: ML model prediction (0-1 probability)
+        symbol: Stock symbol
         
-        Returns:
-            TrendAnalysis object
-        """
-        try:
-            # Calculate trend indicators
-            current_price = stock_data['close'].iloc[-1]
-            sma_20 = technical_indicators['sma_20'].iloc[-1]
-            sma_50 = technical_indicators['sma_50'].iloc[-1]
-            rsi = technical_indicators['rsi'].iloc[-1]
-            macd = technical_indicators['macd'].iloc[-1]
-            macd_signal = technical_indicators['macd_signal'].iloc[-1]
+    Returns:
+        TrendAnalysis object
+    """
+    try:
+        # Calculate trend indicators
+        current_price = stock_data['close'].iloc[-1]
+        sma_20 = technical_indicators['sma_20'].iloc[-1]
+        sma_50 = technical_indicators['sma_50'].iloc[-1]
+        rsi = technical_indicators['rsi'].iloc[-1]
+        macd = technical_indicators['macd'].iloc[-1]
+        macd_signal = technical_indicators['macd_signal'].iloc[-1]
             
-            # Price vs moving averages
-            price_above_sma20 = current_price > sma_20
-            price_above_sma50 = current_price > sma_50
-            sma20_above_sma50 = sma_20 > sma_50
+        # Price vs moving averages
+        price_above_sma20 = current_price > sma_20
+        price_above_sma50 = current_price > sma_50
+        sma20_above_sma50 = sma_20 > sma_50
             
-            # RSI analysis
-            rsi_bullish = rsi > 50
-            rsi_oversold = rsi < 30
-            rsi_overbought = rsi > 70
+        # RSI analysis
+        rsi_bullish = rsi > 50
+        rsi_oversold = rsi < 30
+        rsi_overbought = rsi > 70
             
-            # MACD analysis
-            macd_bullish = macd > macd_signal
-            macd_positive = macd > 0
+        # MACD analysis
+        macd_bullish = macd > macd_signal
+        macd_positive = macd > 0
             
-            # Trend determination
-            bullish_signals = 0
-            bearish_signals = 0
+        # Trend determination
+        bullish_signals = 0
+        bearish_signals = 0
             
-            if price_above_sma20:
-                bullish_signals += 1
-            else:
-                bearish_signals += 1
+        if price_above_sma20:
+            bullish_signals += 1
+        else:
+            bearish_signals += 1
                 
-            if price_above_sma50:
-                bullish_signals += 1
-            else:
-                bearish_signals += 1
+        if price_above_sma50:
+            bullish_signals += 1
+        else:
+            bearish_signals += 1
                 
-            if sma20_above_sma50:
-                bullish_signals += 1
-            else:
-                bearish_signals += 1
+        if sma20_above_sma50:
+            bullish_signals += 1
+        else:
+            bearish_signals += 1
                 
-            if rsi_bullish:
-                bullish_signals += 1
-            else:
-                bearish_signals += 1
+        if rsi_bullish:
+            bullish_signals += 1
+        else:
+            bearish_signals += 1
                 
-            if macd_bullish:
-                bullish_signals += 1
-            else:
-                bearish_signals += 1
+        if macd_bullish:
+            bullish_signals += 1
+        else:
+            bearish_signals += 1
                 
-            if macd_positive:
-                bullish_signals += 1
-            else:
-                bearish_signals += 1
+        if macd_positive:
+            bullish_signals += 1
+        else:
+            bearish_signals += 1
             
-            # ML prediction influence
-            if ml_prediction > 0.6:
-                bullish_signals += 2
-            elif ml_prediction < 0.4:
-                bearish_signals += 2
+        # ML prediction influence
+        if ml_prediction > 0.6:
+            bullish_signals += 2
+        elif ml_prediction < 0.4:
+            bearish_signals += 2
             
-            # Determine trend
-            total_signals = bullish_signals + bearish_signals
-            if total_signals == 0:
-                trend = "neutral"
-                confidence = 0.5
-            elif bullish_signals > bearish_signals:
-                trend = "bullish"
-                confidence = bullish_signals / total_signals
-            else:
-                trend = "bearish"
-                confidence = bearish_signals / total_signals
+        # Determine trend
+        total_signals = bullish_signals + bearish_signals
+        if total_signals == 0:
+            trend = "neutral"
+            confidence = 0.5
+        elif bullish_signals > bearish_signals:
+            trend = "bullish"
+            confidence = bullish_signals / total_signals
+        else:
+            trend = "bearish"
+            confidence = bearish_signals / total_signals
             
-            # Determine strength
-            if confidence > 0.7:
-                strength = "strong"
-            elif confidence > 0.5:
-                strength = "moderate"
-            else:
-                strength = "weak"
+        # Determine strength
+        if confidence > 0.7:
+            strength = "strong"
+        elif confidence > 0.5:
+            strength = "moderate"
+        else:
+            strength = "weak"
             
-            # Determine duration based on moving averages
-            if price_above_sma50 and sma20_above_sma50:
-                duration = "long-term"
-            elif price_above_sma20:
-                duration = "medium-term"
-            else:
-                duration = "short-term"
+        # Determine duration based on moving averages
+        if price_above_sma50 and sma20_above_sma50:
+            duration = "long-term"
+        elif price_above_sma20:
+            duration = "medium-term"
+        else:
+            duration = "short-term"
             
-            # Calculate key levels
-            key_levels = self.calculate_key_levels(stock_data, technical_indicators)
+        # Calculate key levels
+        key_levels = calculate_key_levels(stock_data, technical_indicators)
             
-            # Generate reasoning
-            reasoning = self.generate_trend_reasoning(
-                trend, strength, duration, current_price, 
-                sma_20, sma_50, rsi, macd, ml_prediction
-            )
+        # Generate reasoning
+        reasoning = generate_trend_reasoning(
+            trend, strength, duration, current_price, 
+            sma_20, sma_50, rsi, macd, ml_prediction
+        )
             
-            return TrendAnalysis(
-                trend=trend,
-                confidence=confidence,
-                strength=strength,
-                duration=duration,
-                key_levels=key_levels,
-                reasoning=reasoning
-            )
+        return TrendAnalysis(
+            trend=trend,
+            confidence=confidence,
+            strength=strength,
+            duration=duration,
+            key_levels=key_levels,
+            reasoning=reasoning
+        )
             
-        except Exception as e:
-            logger.error(f"Error analyzing trend: {str(e)}")
-            return TrendAnalysis(
-                trend="neutral",
-                confidence=0.5,
-                strength="weak",
-                duration="short-term",
-                key_levels=[],
-                reasoning=f"Error in analysis: {str(e)}"
-            )
+    except Exception as e:
+        logger.error(f"Error analyzing trend: {str(e)}")
+        return TrendAnalysis(
+            trend="neutral",
+            confidence=0.5,
+            strength="weak",
+            duration="short-term",
+            key_levels=[],
+            reasoning=f"Error in analysis: {str(e)}"
+        )
     
-    def generate_trading_advice(
-        self, 
-        trend_analysis: TrendAnalysis,
-        stock_data: pd.DataFrame,
-        technical_indicators: pd.DataFrame,
-        ml_prediction: float,
-        symbol: str
-    ) -> TradingAdvice:
-        """
-        Generate trading advice based on trend analysis
+@tool
+def generate_trading_advice(
+    trend_analysis: TrendAnalysis,
+    stock_data: pd.DataFrame,
+    technical_indicators: pd.DataFrame,
+    ml_prediction: float,
+    symbol: str
+) -> TradingAdvice:
+    """
+    Generate trading advice based on trend analysis
         
-        Args:
-            trend_analysis: Trend analysis result
-            stock_data: OHLCV data
-            technical_indicators: Technical indicators
-            ml_prediction: ML prediction
-            symbol: Stock symbol
+    Args:
+        trend_analysis: Trend analysis result
+        stock_data: OHLCV data
+        technical_indicators: Technical indicators
+        ml_prediction: ML prediction
+        symbol: Stock symbol
         
-        Returns:
-            TradingAdvice object
-        """
-        try:
-            current_price = stock_data['close'].iloc[-1]
+    Returns:
+        TradingAdvice object
+    """
+    try:
+        current_price = stock_data['close'].iloc[-1]
             
-            # Determine action based on trend and confidence
-            if trend_analysis.trend == "bullish" and trend_analysis.confidence > 0.6:
-                action = "buy"
-                confidence = trend_analysis.confidence
-            elif trend_analysis.trend == "bearish" and trend_analysis.confidence > 0.6:
-                action = "sell"
-                confidence = trend_analysis.confidence
-            elif trend_analysis.confidence < 0.4:
-                action = "wait"
-                confidence = 1 - trend_analysis.confidence
-            else:
-                action = "hold"
-                confidence = 0.5
+        # Determine action based on trend and confidence
+        if trend_analysis.trend == "bullish" and trend_analysis.confidence > 0.6:
+            action = "buy"
+            confidence = trend_analysis.confidence
+        elif trend_analysis.trend == "bearish" and trend_analysis.confidence > 0.6:
+            action = "sell"
+            confidence = trend_analysis.confidence
+        elif trend_analysis.confidence < 0.4:
+            action = "wait"
+            confidence = 1 - trend_analysis.confidence
+        else:
+            action = "hold"
+            confidence = 0.5
             
-            # Determine risk level
-            if trend_analysis.strength == "strong" and trend_analysis.confidence > 0.7:
-                risk_level = "low"
-            elif trend_analysis.strength == "moderate":
-                risk_level = "medium"
-            else:
-                risk_level = "high"
+        # Determine risk level
+        if trend_analysis.strength == "strong" and trend_analysis.confidence > 0.7:
+            risk_level = "low"
+        elif trend_analysis.strength == "moderate":
+            risk_level = "medium"
+        else:
+            risk_level = "high"
             
-            # Calculate target price and stop loss
+        # Calculate target price and stop loss
+        target_price = None
+        stop_loss = None
+            
+        if action == "buy":
+            # Target: 5-10% above current price
+            target_price = current_price * 1.07
+            # Stop loss: 3-5% below current price
+            stop_loss = current_price * 0.96
+        elif action == "sell":
+            # Target: 5-10% below current price
+            target_price = current_price * 0.93
+            # Stop loss: 3-5% above current price
+            stop_loss = current_price * 1.04
+        else:
             target_price = None
             stop_loss = None
             
-            if action == "buy":
-                # Target: 5-10% above current price
-                target_price = current_price * 1.07
-                # Stop loss: 3-5% below current price
-                stop_loss = current_price * 0.96
-            elif action == "sell":
-                # Target: 5-10% below current price
-                target_price = current_price * 0.93
-                # Stop loss: 3-5% above current price
-                stop_loss = current_price * 1.04
+        # Generate reasoning
+        reasoning = generate_advice_reasoning(
+            action, trend_analysis, current_price, ml_prediction
+        )
             
-            # Generate reasoning
-            reasoning = self._generate_advice_reasoning(
-                action, trend_analysis, current_price, ml_prediction
-            )
+        return TradingAdvice(
+            action=action,
+            confidence=confidence,
+            risk_level=risk_level,
+            target_price=target_price,
+            stop_loss=stop_loss,
+            reasoning=reasoning,
+            timeframe="1-3 days"
+        )
             
-            return TradingAdvice(
-                action=action,
-                confidence=confidence,
-                risk_level=risk_level,
-                target_price=target_price,
-                stop_loss=stop_loss,
-                reasoning=reasoning,
-                timeframe="1-3 days"
-            )
-            
-        except Exception as e:
-            logger.error(f"Error generating trading advice: {str(e)}")
-            return TradingAdvice(
-                action="hold",
-                confidence=0.5,
-                risk_level="high",
-                reasoning=f"Error generating advice: {str(e)}"
-            )
+    except Exception as e:
+        logger.error(f"Error generating trading advice: {str(e)}")
+        return TradingAdvice(
+            action="hold",
+            confidence=0.5,
+            risk_level="high",
+            reasoning=f"Error generating advice: {str(e)}"
+        )
     
-    def calculate_key_levels(
-        self, 
-        stock_data: pd.DataFrame, 
-        technical_indicators: pd.DataFrame
-    ) -> List[float]:
-        """Calculate key support and resistance levels"""
-        try:
-            current_price = stock_data['close'].iloc[-1]
-            levels = []
+@tool
+def calculate_key_levels(
+    stock_data: pd.DataFrame, 
+    technical_indicators: pd.DataFrame
+) -> List[float]:
+    """Calculate key support and resistance levels"""
+    try:
+        current_price = stock_data['close'].iloc[-1]
+        levels = []
             
-            # Add moving averages as key levels
-            sma_20 = technical_indicators['sma_20'].iloc[-1]
-            sma_50 = technical_indicators['sma_50'].iloc[-1]
-            sma_200 = technical_indicators['sma_200'].iloc[-1]
+        # Add moving averages as key levels
+        sma_20 = technical_indicators['sma_20'].iloc[-1]
+        sma_50 = technical_indicators['sma_50'].iloc[-1]
+        sma_200 = technical_indicators['sma_200'].iloc[-1]
             
-            if not pd.isna(sma_20):
-                levels.append(round(sma_20, 2))
-            if not pd.isna(sma_50):
-                levels.append(round(sma_50, 2))
-            if not pd.isna(sma_200):
-                levels.append(round(sma_200, 2))
+        if not pd.isna(sma_20):
+            levels.append(round(sma_20, 2))
+        if not pd.isna(sma_50):
+            levels.append(round(sma_50, 2))
+        if not pd.isna(sma_200):
+            levels.append(round(sma_200, 2))
             
-            # Add recent highs and lows
-            recent_high = stock_data['high'].tail(20).max()
-            recent_low = stock_data['low'].tail(20).min()
+        # Add recent highs and lows
+        recent_high = stock_data['high'].tail(20).max()
+        recent_low = stock_data['low'].tail(20).min()
             
-            levels.append(round(recent_high, 2))
-            levels.append(round(recent_low, 2))
+        levels.append(round(recent_high, 2))
+        levels.append(round(recent_low, 2))
             
-            # Remove duplicates and sort
-            levels = sorted(list(set(levels)))
+        # Remove duplicates and sort
+        levels = sorted(list(set(levels)))
             
-            return levels
+        return levels
             
-        except Exception as e:
-            logger.error(f"Error calculating key levels: {str(e)}")
-            return []
-    
-    def generate_trend_reasoning(
-        self, 
-        trend: str, 
-        strength: str, 
-        duration: str,
-        current_price: float,
-        sma_20: float,
-        sma_50: float,
-        rsi: float,
-        macd: float,
-        ml_prediction: float
-    ) -> str:
-        """Generate human-readable trend reasoning"""
-        
-        reasoning_parts = []
-        
-        # Price vs moving averages
-        if current_price > sma_20:
-            reasoning_parts.append("Price is above 20-day moving average")
-        else:
-            reasoning_parts.append("Price is below 20-day moving average")
-            
-        if current_price > sma_50:
-            reasoning_parts.append("Price is above 50-day moving average")
-        else:
-            reasoning_parts.append("Price is below 50-day moving average")
-        
-        # RSI analysis
-        if rsi > 70:
-            reasoning_parts.append("RSI indicates overbought conditions")
-        elif rsi < 30:
-            reasoning_parts.append("RSI indicates oversold conditions")
-        else:
-            reasoning_parts.append(f"RSI at {rsi:.1f} indicates neutral momentum")
-        
-        # MACD analysis
-        if macd > 0:
-            reasoning_parts.append("MACD is positive, indicating upward momentum")
-        else:
-            reasoning_parts.append("MACD is negative, indicating downward momentum")
-        
-        # ML prediction
-        if ml_prediction > 0.6:
-            reasoning_parts.append("ML model predicts bullish movement")
-        elif ml_prediction < 0.4:
-            reasoning_parts.append("ML model predicts bearish movement")
-        else:
-            reasoning_parts.append("ML model shows neutral prediction")
-        
-        # Overall trend
-        reasoning_parts.append(f"Overall trend is {trend} with {strength} {duration} momentum")
-        
-        return ". ".join(reasoning_parts) + "."
-    
-    def _generate_advice_reasoning(
-        self,
-        action: str,
-        trend_analysis: TrendAnalysis,
-        current_price: float,
-        ml_prediction: float
-    ) -> str:
-        """Generate trading advice reasoning"""
-        
-        if action == "buy":
-            return f"Strong {trend_analysis.trend} signals with {trend_analysis.confidence:.1%} confidence. ML model predicts {ml_prediction:.1%} probability of upward movement. Consider buying with proper risk management."
-        elif action == "sell":
-            return f"Strong {trend_analysis.trend} signals with {trend_analysis.confidence:.1%} confidence. ML model predicts {ml_prediction:.1%} probability of upward movement. Consider selling or reducing position."
-        elif action == "hold":
-            return f"Mixed signals with {trend_analysis.confidence:.1%} confidence. ML model shows {ml_prediction:.1%} probability. Best to hold current position and monitor for clearer signals."
-        else:  # wait
-            return f"Low confidence signals ({trend_analysis.confidence:.1%}). ML model shows {ml_prediction:.1%} probability. Wait for clearer market direction before taking action."
+    except Exception as e:
+        logger.error(f"Error calculating key levels: {str(e)}")
+        return []
 
-# Global instance
+@tool
+def generate_trend_reasoning(
+    trend: str, 
+    strength: str, 
+    duration: str,
+    current_price: float,
+    sma_20: float,
+    sma_50: float,
+    rsi: float,
+    macd: float,
+    ml_prediction: float
+) -> str:
+    """Generate human-readable trend reasoning"""
+    
+    reasoning_parts = []
+    
+    # Price vs moving averages
+    if current_price > sma_20:
+        reasoning_parts.append("Price is above 20-day moving average")
+    else:
+        reasoning_parts.append("Price is below 20-day moving average")
+        
+    if current_price > sma_50:
+        reasoning_parts.append("Price is above 50-day moving average")
+    else:
+        reasoning_parts.append("Price is below 50-day moving average")
+    
+    # RSI analysis
+    if rsi > 70:
+        reasoning_parts.append("RSI indicates overbought conditions")
+    elif rsi < 30:
+        reasoning_parts.append("RSI indicates oversold conditions")
+    else:
+        reasoning_parts.append(f"RSI at {rsi:.1f} indicates neutral momentum")
+    
+    # MACD analysis
+    if macd > 0:
+        reasoning_parts.append("MACD is positive, indicating upward momentum")
+    else:
+        reasoning_parts.append("MACD is negative, indicating downward momentum")
+    
+    # ML prediction
+    if ml_prediction > 0.6:
+        reasoning_parts.append("ML model predicts bullish movement")
+    elif ml_prediction < 0.4:
+        reasoning_parts.append("ML model predicts bearish movement")
+    else:
+        reasoning_parts.append("ML model shows neutral prediction")
+    
+    # Overall trend
+    reasoning_parts.append(f"Overall trend is {trend} with {strength} {duration} momentum")
+    
+    return ". ".join(reasoning_parts) + "."
+
+
+@tool
+def generate_advice_reasoning(
+    action: str,
+    trend_analysis: dict,
+    current_price: float,
+    ml_prediction: float
+) -> str:
+    """Generate trading advice reasoning"""
+    
+    if action == "buy":
+        return f"Strong {trend_analysis['trend']} signals with {trend_analysis['confidence']:.1%} confidence. ML model predicts {ml_prediction:.1%} probability of upward movement. Consider buying with proper risk management."
+    elif action == "sell":
+        return f"Strong {trend_analysis['trend']} signals with {trend_analysis['confidence']:.1%} confidence. ML model predicts {ml_prediction:.1%} probability of upward movement. Consider selling or reducing position."
+    elif action == "hold":
+        return f"Mixed signals with {trend_analysis['confidence']:.1%} confidence. ML model shows {ml_prediction:.1%} probability. Best to hold current position and monitor for clearer signals."
+    else:  # wait
+        return f"Low confidence signals ({trend_analysis['confidence']:.1%}). ML model shows {ml_prediction:.1%} probability. Wait for clearer market direction before taking action."
+
+
+@tool
+def calculate_key_levels(
+    stock_data: pd.DataFrame, 
+    technical_indicators: pd.DataFrame
+) -> List[float]:
+    """Calculate key support and resistance levels"""
+    try:
+        current_price = stock_data['close'].iloc[-1]
+        levels = []
+        
+        # Add moving averages as key levels
+        sma_20 = technical_indicators['sma_20'].iloc[-1]
+        sma_50 = technical_indicators['sma_50'].iloc[-1]
+        sma_200 = technical_indicators['sma_200'].iloc[-1]
+        
+        if not pd.isna(sma_20):
+            levels.append(round(sma_20, 2))
+        if not pd.isna(sma_50):
+            levels.append(round(sma_50, 2))
+        if not pd.isna(sma_200):
+            levels.append(round(sma_200, 2))
+        
+        # Add recent highs and lows
+        recent_high = stock_data['high'].tail(20).max()
+        recent_low = stock_data['low'].tail(20).min()
+        
+        levels.append(round(recent_high, 2))
+        levels.append(round(recent_low, 2))
+        
+        # Remove duplicates and sort
+        levels = sorted(list(set(levels)))
+        
+        return levels
+        
+    except Exception as e:
+        logger.error(f"Error calculating key levels: {str(e)}")
+        return []
+
+
+class TrendAnalyzer:
+    """Separate agent for analyzing hard financial data and trends"""
+    
+    def __init__(self):
+        self.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+        #self.memory = MemorySaver()
+        self.llm = ChatOpenAI(
+            #model="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+            model="lgai/exaone-3-5-32b-instruct",
+            openai_api_base="https://api.together.xyz/v1",
+            openai_api_key=os.getenv("TOGETHER_API_KEY"),  
+            temperature=0.7
+        )
+        
+        # Tools for trend analysis
+        self.tools = [
+            generate_trend_reasoning,
+            generate_advice_reasoning,
+            calculate_key_levels,
+            analyze_trend,
+            generate_trading_advice,
+            get_market_data_sync,
+        ]
+        
+        # Initialize agent
+        self.agent_executor = initialize_agent(
+            tools=self.tools,
+            llm=self.llm,
+            agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+            verbose=True,
+            handle_parsing_errors=True
+        )
+    
+    def analyze_trend(self, symbol: str):
+        """Analyze trend using technical indicators and ML predictions"""
+        try:
+            # Get real market data
+            stock_data = data_collector.get_stock_data_yahoo(symbol)
+            if stock_data is None or stock_data.empty:
+                return f"Error: No data available for {symbol}"
+            
+            # Calculate technical indicators
+            technical_indicators = feature_engineer.calculate_technical_indicators(stock_data)
+            
+            # Get ML prediction
+            ml_prediction = ml_manager.predict(stock_data)
+            
+            # Create a comprehensive analysis prompt
+            agent_prompt = f"""
+            You are an expert financial analyst specializing in technical analysis and trend identification.
+            
+            TASK: Analyze the stock {symbol} using real market data and provide a comprehensive trend analysis.
+            
+            AVAILABLE DATA:
+            - Current stock data: {stock_data['close'].iloc[-1]:.2f} (latest close price)
+            - Technical indicators: RSI, MACD, Moving Averages (20, 50, 200 day)
+            - ML prediction: {ml_prediction:.3f} (probability of upward movement)
+            
+            REQUIRED ANALYSIS STEPS:
+            1. Use analyze_trend tool to determine the overall trend direction (bullish/bearish/neutral)
+            2. Use calculate_key_levels tool to identify key support and resistance levels
+            3. Use generate_trend_reasoning tool to explain the technical analysis
+            4. Use generate_trading_advice tool to provide actionable trading recommendations
+            5. Use generate_advice_reasoning tool to explain the trading advice
+            
+            EXPECTED OUTPUT FORMAT:
+            - Trend Analysis: [bullish/bearish/neutral] with confidence level
+            - Key Levels: Support and resistance prices
+            - Technical Reasoning: Clear explanation of indicators
+            - Trading Advice: [buy/sell/hold/wait] with risk assessment
+            - Reasoning: Detailed explanation of the recommendation
+            
+            IMPORTANT: Use the tools in sequence to build a comprehensive analysis. Do not skip any steps.
+            Be specific about price levels, confidence percentages, and risk factors.
+            """
+            
+            result = self.agent_executor.run(agent_prompt)
+            return result
+        except Exception as e:
+            logger.error(f"Error analyzing trend: {str(e)}")
+            return f"Error analyzing trend: {str(e)}"
+
+trend_analyzer = TrendAnalyzer()
 financial_analyzer = FinancialAnalyzer() 

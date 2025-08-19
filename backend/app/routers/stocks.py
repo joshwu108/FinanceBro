@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.services.data_collector import DataCollector  # Temporarily disabled due to numpy compatibility issues
 from app.services.ml_models import MLModelManager
 from app.services.feature_engineering import FeatureEngineer
-from app.services.financial_analyzer import FinancialAnalyzer
+from app.services.financial_analyzer import FinancialAnalyzer, TrendAnalyzer
 import numpy as np
 import json
 import logging
@@ -313,7 +313,17 @@ async def get_stock_analysis(symbol: str):
     except Exception as e:
         logger.error(f"Error fetching stock analysis for {symbol}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
+    
+@router.get("/{symbol}/trend")
+async def get_stock_trend(symbol: str):
+    """Get trend analysis for a stock"""
+    try:
+        trend_analyzer = TrendAnalyzer()
+        trend_analysis = await trend_analyzer.analyze_trend(symbol)
+        return trend_analysis
+    except Exception as e:
+        logger.error(f"Error fetching stock trend for {symbol}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{symbol}/train")
 async def train_stock_models(symbol: str):
