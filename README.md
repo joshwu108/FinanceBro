@@ -83,39 +83,6 @@ npm install
 npm start
 ```
 
-## 📊 Development Roadmap
-
-### Phase 1: Foundation (Week 1-2)
-- [x] Project structure setup
-- [ ] Basic FastAPI backend
-- [ ] Database schema design
-- [ ] Stock data API integration
-- [ ] React frontend setup
-
-### Phase 2: Data Pipeline (Week 3-4)
-- [ ] Real-time data collection
-- [ ] Data preprocessing pipeline
-- [ ] Historical data storage
-- [ ] Basic ML model training
-
-### Phase 3: ML Models (Week 5-6)
-- [ ] Feature engineering
-- [ ] Model training pipeline
-- [ ] Model evaluation and validation
-- [ ] Prediction API endpoints
-
-### Phase 4: Frontend & Real-time (Week 7-8)
-- [ ] Interactive dashboard
-- [ ] Real-time data visualization
-- [ ] Alert system
-- [ ] Portfolio tracking
-
-### Phase 5: Advanced Features (Week 9-10)
-- [ ] Advanced ML models
-- [ ] Backtesting system
-- [ ] Performance optimization
-- [ ] Deployment preparation
-
 ## 🔧 Configuration
 
 Create a `.env` file in the root directory:
