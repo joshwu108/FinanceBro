@@ -2,7 +2,7 @@
 
 A comprehensive financial analysis platform that monitors stock trends, creates alerts, and makes data-driven investment decisions using machine learning.
 
-## 🚀 Features
+## Features
 
 - **Real-time Stock Monitoring**: Live price tracking and trend analysis
 - **ML-Powered Predictions**: Advanced models for stock price forecasting
@@ -11,31 +11,7 @@ A comprehensive financial analysis platform that monitors stock trends, creates 
 - **Interactive Dashboard**: Real-time visualization of market data
 - **API Integration**: Multiple data sources for comprehensive analysis
 
-## 🏗️ Architecture
-
-```
-FinanceBro/
-├── backend/                 # FastAPI backend with ML models
-│   ├── app/
-│   │   ├── api/            # REST API endpoints
-│   │   ├── models/         # ML models and training
-│   │   ├── services/       # Business logic
-│   │   └── utils/          # Utilities and helpers
-│   ├── ml_pipeline/        # ML training and evaluation
-│   └── requirements.txt
-├── frontend/               # React TypeScript frontend
-│   ├── src/
-│   │   ├── components/     # Reusable UI components
-│   │   ├── pages/          # Page components
-│   │   ├── services/       # API integration
-│   │   └── utils/          # Frontend utilities
-│   └── package.json
-├── data/                   # Data storage and processing
-├── docs/                   # Documentation
-└── docker/                 # Docker configuration
-```
-
-## 🛠️ Tech Stack
+## Tech Stack
 
 ### Backend
 - **FastAPI**: High-performance web framework
@@ -59,7 +35,7 @@ FinanceBro/
 - **Alpha Vantage API**: Market data
 - **Streamlit**: ML model development
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Python 3.9+
@@ -83,45 +59,3 @@ npm install
 npm start
 ```
 
-## 🔧 Configuration
-
-Create a `.env` file in the root directory:
-
-```env
-# Database
-DATABASE_URL=postgresql://user:password@localhost/financebro
-REDIS_URL=redis://localhost:6379
-
-# APIs
-ALPHA_VANTAGE_API_KEY=your_key_here
-YAHOO_FINANCE_API_KEY=your_key_here
-
-# ML Model
-MODEL_PATH=./models/
-```
-
-## 📈 ML Model Strategy
-
-1. **Data Collection**: Historical price data, technical indicators, sentiment analysis
-2. **Feature Engineering**: Technical indicators, market sentiment, economic indicators
-3. **Model Types**: 
-   - LSTM for time series prediction
-   - Random Forest for classification
-   - XGBoost for regression
-4. **Evaluation**: Backtesting, cross-validation, performance metrics
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
-## 📄 License
-
-MIT License - see LICENSE file for details
-
-## 🆘 Support
-
-For questions or issues, please open an issue on GitHub. 
