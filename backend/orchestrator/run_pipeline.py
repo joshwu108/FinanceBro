@@ -324,43 +324,42 @@ def _run_symbol_pipeline(
         "feature_count": len(feature_metadata),
         "model": {
             "model_type": model_outputs["model_type"],
-            "train_metrics": model_outputs["train_metrics"],
-            "test_metrics": model_outputs["test_metrics"],
-            "train_test_gap": model_outputs["train_test_gap"],
-            "feature_importances": model_outputs["feature_importances"],
-            "split_info": model_outputs["split_info"],
+            "train_metrics": _clean_dict(model_outputs["train_metrics"]),
+            "test_metrics": _clean_dict(model_outputs["test_metrics"]),
+            "train_test_gap": _clean_dict(model_outputs["train_test_gap"]),
+            "feature_importances": _clean_dict(model_outputs["feature_importances"]),
+            "split_info": _clean_dict(model_outputs["split_info"]),
         },
         "walk_forward": {
             "n_folds": wf_outputs["n_folds"],
-            "aggregated_metrics": wf_outputs["aggregated_metrics"],
+            "aggregated_metrics": _clean_dict(wf_outputs["aggregated_metrics"]),
             "fold_results": _serialize_fold_results(wf_outputs["fold_results"]),
+            "adjustments": _clean_dict(wf_outputs.get("adjustments", {})),
         },
         "backtest": {
-            "performance_summary": backtest_outputs["performance_summary"],
+            "performance_summary": _clean_dict(backtest_outputs["performance_summary"]),
             "trade_count": len(backtest_outputs["trade_log"]),
             "equity_start": float(equity_curve.iloc[0]),
             "equity_end": float(equity_curve.iloc[-1]),
             "equity_curve": serialize_equity_curve(equity_curve),
             "trade_log": serialize_trade_log(backtest_outputs["trade_log"]),
+            "ohlcv": serialize_ohlcv(price_data) if include_ohlcv else [],
         },
         "overfitting": {
-            "overfitting_score": overfitting_outputs["overfitting_score"],
+            "overfitting_score": float(overfitting_outputs["overfitting_score"]),
             "warnings": overfitting_outputs["warnings"],
             "failure_modes": overfitting_outputs["failure_modes"],
             "recommendations": overfitting_outputs["recommendations"],
-            "diagnostics": overfitting_outputs["diagnostics"],
+            "diagnostics": _clean_dict(overfitting_outputs["diagnostics"]),
         },
         "risk": {
-            "risk_metrics": risk_outputs["risk_metrics"],
+            "risk_metrics": _clean_dict(risk_outputs["risk_metrics"]),
             "mean_position_size": float(risk_outputs["position_sizes"].abs().mean()),
         },
         # Keep raw series for PortfolioAgent and StatsAgent
         "_equity_curve": equity_curve,
         "_strategy_returns": strategy_returns,
     }
-
-    if include_ohlcv:
-        result["ohlcv"] = serialize_ohlcv(price_data)
 
     return result
 
@@ -410,7 +409,7 @@ def _run_portfolio(
     )
 
     return {
-        "portfolio_metrics": portfolio_outputs["portfolio_metrics"],
+        "portfolio_metrics": _clean_dict(portfolio_outputs["portfolio_metrics"]),
         "n_assets": len(symbols),
         "equity_curve": serialize_equity_curve(portfolio_outputs["equity_curve"]),
         "weights": serialize_weights(portfolio_outputs["weights"]),
@@ -461,15 +460,40 @@ def _run_stats(
     )
 
     return {
-        "metrics": stats_outputs["metrics"],
-        "bootstrap": stats_outputs["bootstrap"],
-        "hypothesis_test": stats_outputs["hypothesis_test"],
-        "multiple_testing": stats_outputs["multiple_testing"],
-        "benchmark": stats_outputs.get("benchmark"),
+        "metrics": _clean_dict(stats_outputs["metrics"]),
+        "bootstrap": _clean_dict(stats_outputs["bootstrap"]),
+        "hypothesis_test": _clean_dict(stats_outputs["hypothesis_test"]),
+        "multiple_testing": _clean_dict(stats_outputs["multiple_testing"]),
+        "benchmark": _clean_dict(stats_outputs["benchmark"]) if stats_outputs.get("benchmark") else None,
     }
 
 
 # ── Helpers ──────────────────────────────────────────────────────
+
+
+def _clean_dict(d: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively convert numpy types to Python natives for JSON serialization."""
+    import numpy as np
+    import math
+
+    cleaned: Dict[str, Any] = {}
+    for k, v in d.items():
+        if isinstance(v, dict):
+            cleaned[k] = _clean_dict(v)
+        elif isinstance(v, (np.floating, np.complexfloating)):
+            fval = float(v)
+            cleaned[k] = None if (math.isnan(fval) or math.isinf(fval)) else round(fval, 6)
+        elif isinstance(v, np.integer):
+            cleaned[k] = int(v)
+        elif isinstance(v, np.bool_):
+            cleaned[k] = bool(v)
+        elif isinstance(v, float):
+            cleaned[k] = None if (math.isnan(v) or math.isinf(v)) else round(v, 6)
+        elif isinstance(v, (pd.Timestamp, )):
+            cleaned[k] = v.isoformat()
+        else:
+            cleaned[k] = v
+    return cleaned
 
 
 def _fetch_benchmark(
@@ -541,11 +565,20 @@ def _serialize_fold_results(fold_results: List[Dict[str, Any]]) -> List[Dict[str
     """Strip non-serializable objects from fold results for JSON output."""
     serialized = []
     for fold in fold_results:
+        model_metrics = fold.get("model_metrics", {})
+        cleaned_model_metrics = {}
+        for k, v in model_metrics.items():
+            if isinstance(v, dict):
+                cleaned_model_metrics[k] = _clean_dict(v)
+            else:
+                cleaned_model_metrics[k] = v
+        backtest_metrics = fold.get("backtest_metrics", {})
+        cleaned_backtest = _clean_dict(backtest_metrics) if isinstance(backtest_metrics, dict) else backtest_metrics
         serialized.append({
             "fold_index": fold["fold_index"],
-            "split_info": fold["split_info"],
-            "model_metrics": fold["model_metrics"],
-            "backtest_metrics": fold["backtest_metrics"],
+            "split_info": _clean_dict(fold["split_info"]) if isinstance(fold.get("split_info"), dict) else fold.get("split_info"),
+            "model_metrics": cleaned_model_metrics,
+            "backtest_metrics": cleaned_backtest,
             "model_type": fold.get("model_type"),
         })
     return serialized

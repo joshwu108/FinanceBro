@@ -544,6 +544,10 @@ class DataAgent(BaseAgent):
         if result.index.tz is not None:
             result.index = result.index.tz_convert("UTC").tz_localize(None)
 
+        # Normalize to midnight — yfinance returns intraday timestamps
+        # (e.g. 04:00 UTC) that cause index mismatches in walk-forward splits
+        result.index = result.index.normalize()
+
         # Deduplicate timestamps (keep first occurrence)
         if not result.index.is_unique:
             dupes = result.index[result.index.duplicated()].tolist()
