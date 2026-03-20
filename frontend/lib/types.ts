@@ -246,3 +246,65 @@ export interface PredictResponse {
   timestamp: string
   model_type: string | null
 }
+
+// ── Live WebSocket (Alpaca stream) types ─────────────────────────────────────
+
+export type WSStatus = "DISCONNECTED" | "CONNECTING" | "CONNECTED" | "ERROR"
+
+export interface LiveTick {
+  date: string // ISO timestamp (UTC)
+  price: number
+  size: number
+}
+
+export interface LiveQuote {
+  date: string // ISO timestamp (UTC)
+  bidPrice: number
+  bidSize: number
+  askPrice: number
+  askSize: number
+}
+
+export interface LiveBar {
+  date: string // ISO timestamp (UTC)
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+export type WSMessage =
+  | {
+      type: "trade"
+      symbol: string
+      trade: LiveTick
+      timestamp: string
+    }
+  | {
+      type: "quote"
+      symbol: string
+      quote: LiveQuote
+      timestamp: string
+    }
+  | {
+      type: "bar"
+      symbol: string
+      bar: {
+        date: string
+        open: number
+        high: number
+        low: number
+        close: number
+        volume: number
+      }
+      timestamp: string
+    }
+  | {
+      type: "ping"
+      ts: string
+    }
+  | {
+      type: "pong"
+    }
+

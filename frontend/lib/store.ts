@@ -6,6 +6,9 @@ import type {
   ExperimentSummary,
   OHLCVBar,
   SymbolResult,
+  LiveTick,
+  LiveQuote,
+  WSStatus,
 } from "./types"
 import * as api from "./api"
 
@@ -30,6 +33,19 @@ interface AppState {
   // Data
   ohlcvData: Record<string, OHLCVBar[]>
   experiments: ExperimentSummary[]
+
+  // Live data (Alpaca stream)
+  wsStatus: WSStatus
+  wsError: string | null
+  wsLastUpdatedAtBySymbol: Record<string, number | null>
+  liveTickBySymbol: Record<string, LiveTick | null>
+  liveQuoteBySymbol: Record<string, LiveQuote | null>
+  liveMinuteBars: Record<string, OHLCVBar[]>
+  setWsStatus: (status: WSStatus, error?: string | null) => void
+  setLiveMinuteBars: (symbol: string, bars: OHLCVBar[]) => void
+  upsertLiveBar: (symbol: string, bar: OHLCVBar) => void
+  setLiveTick: (symbol: string, tick: LiveTick | null) => void
+  setLiveQuote: (symbol: string, quote: LiveQuote | null) => void
 
   // Logs
   logs: LogEntry[]
@@ -82,6 +98,73 @@ export const useAppStore = create<AppState>((set, get) => ({
   ohlcvData: {},
   experiments: [],
 
+  // Live data
+  wsStatus: "DISCONNECTED",
+  wsError: null,
+  wsLastUpdatedAtBySymbol: {},
+  liveTickBySymbol: {},
+  liveQuoteBySymbol: {},
+  liveMinuteBars: {},
+  setWsStatus: (status, error = null) => set({ wsStatus: status, wsError: error }),
+  setLiveMinuteBars: (symbol, bars) =>
+    set((state) => {
+      const sym = symbol.trim().toUpperCase()
+      const capped = (bars ?? []).slice(-500)
+      return {
+        liveMinuteBars: { ...state.liveMinuteBars, [sym]: capped },
+        wsLastUpdatedAtBySymbol: { ...state.wsLastUpdatedAtBySymbol, [sym]: Date.now() },
+      }
+    }),
+  upsertLiveBar: (symbol, bar) =>
+    set((state) => {
+      const sym = symbol.trim().toUpperCase()
+      const existing = state.liveMinuteBars[sym] ?? []
+
+      const barT = Date.parse(bar.date)
+      let next = existing
+
+      if (existing.length === 0) {
+        next = [bar]
+      } else {
+        const last = existing[existing.length - 1]
+        const lastT = Date.parse(last.date)
+        if (barT === lastT) {
+          next = [...existing.slice(0, -1), bar]
+        } else if (barT > lastT) {
+          next = [...existing, bar]
+        } else {
+          const idx = existing.findIndex((b) => Date.parse(b.date) === barT)
+          if (idx >= 0) {
+            next = [...existing]
+            next[idx] = bar
+          } else {
+            next = [...existing, bar].sort(
+              (a, b) => Date.parse(a.date) - Date.parse(b.date)
+            )
+          }
+        }
+      }
+
+      const capped = next.slice(-500)
+      return {
+        liveMinuteBars: { ...state.liveMinuteBars, [sym]: capped },
+        wsLastUpdatedAtBySymbol: {
+          ...state.wsLastUpdatedAtBySymbol,
+          [sym]: Date.now(),
+        },
+      }
+    }),
+  setLiveTick: (symbol, tick) =>
+    set((state) => {
+      const sym = symbol.trim().toUpperCase()
+      return { liveTickBySymbol: { ...state.liveTickBySymbol, [sym]: tick } }
+    }),
+  setLiveQuote: (symbol, quote) =>
+    set((state) => {
+      const sym = symbol.trim().toUpperCase()
+      return { liveQuoteBySymbol: { ...state.liveQuoteBySymbol, [sym]: quote } }
+    }),
+
   // Logs
   logs: [],
   addLog: (entry) =>
@@ -108,9 +191,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // Cache OHLCV data from backtest results
       const updatedOhlcv = { ...get().ohlcvData }
-      for (const [symbol, symbolResult] of Object.entries(result.per_symbol)) {
-        if (symbolResult.backtest?.ohlcv) {
-          updatedOhlcv[symbol] = symbolResult.backtest.ohlcv
+      if (result.per_symbol) {
+        for (const [symbol, symbolResult] of Object.entries(result.per_symbol)) {
+          if (symbolResult.backtest?.ohlcv) {
+            updatedOhlcv[symbol] = symbolResult.backtest.ohlcv
+          }
         }
       }
 

@@ -6,7 +6,7 @@ import { useAppStore } from "@/lib/store"
 
 const SYMBOLS = ["SPY", "QQQ", "AAPL", "TSLA", "NVDA", "MSFT", "AMZN", "META", "GOOGL", "BTC-USD", "ETH-USD"]
 
-type Status = "LIVE" | "BACKTEST" | "IDLE"
+type Status = "LIVE" | "BACKTEST" | "CONNECTING" | "DISCONNECTED" | "ERROR"
 
 export function TopNav() {
   const mode = useAppStore((s) => s.mode)
@@ -14,6 +14,7 @@ export function TopNav() {
   const activeSymbol = useAppStore((s) => s.activeSymbol)
   const setActiveSymbol = useAppStore((s) => s.setActiveSymbol)
   const running = useAppStore((s) => s.running)
+  const wsStatus = useAppStore((s) => s.wsStatus)
 
   const [symbolOpen, setSymbolOpen] = useState(false)
   const [now, setNow] = useState<Date | null>(null)
@@ -24,18 +25,33 @@ export function TopNav() {
     return () => clearInterval(interval)
   }, [])
 
-  const status: Status = mode === "live" ? "LIVE" : running ? "BACKTEST" : "IDLE"
+  const status: Status =
+    mode === "live"
+      ? wsStatus === "CONNECTED"
+        ? "LIVE"
+        : wsStatus === "CONNECTING"
+          ? "CONNECTING"
+          : wsStatus === "ERROR"
+            ? "ERROR"
+            : "DISCONNECTED"
+      : running
+        ? "BACKTEST"
+        : "DISCONNECTED"
 
   const statusColors: Record<Status, string> = {
     LIVE: "text-[#00FF9C]",
     BACKTEST: "text-[#FFD60A]",
-    IDLE: "text-[#8B949E]",
+    CONNECTING: "text-[#FFD60A]",
+    DISCONNECTED: "text-[#FF4D4D]",
+    ERROR: "text-[#FF4D4D]",
   }
 
   const statusDot: Record<Status, string> = {
     LIVE: "bg-[#00FF9C] animate-pulse",
     BACKTEST: "bg-[#FFD60A]",
-    IDLE: "bg-[#8B949E]",
+    CONNECTING: "bg-[#FFD60A] animate-pulse",
+    DISCONNECTED: "bg-[#FF4D4D]",
+    ERROR: "bg-[#FF4D4D]",
   }
 
   return (
@@ -124,6 +140,8 @@ export function TopNav() {
         </span>
         {status === "LIVE" ? (
           <Wifi className="w-3 h-3 text-[#00FF9C]" />
+        ) : status === "CONNECTING" ? (
+          <Wifi className="w-3 h-3 text-[#FFD60A]" />
         ) : (
           <WifiOff className="w-3 h-3 text-[#8B949E]" />
         )}

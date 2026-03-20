@@ -29,7 +29,6 @@ function formatCurveData(points: EquityCurvePoint[]): LineData<Time>[] {
 export function EquityCurve({
   equityCurve,
   benchmarkCurve,
-  height = 350,
 }: EquityCurveProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -45,9 +44,11 @@ export function EquityCurve({
       chartRef.current = null
     }
 
+    const chartHeight = container.clientHeight || 350
+
     const chart = createChart(container, {
       width: container.clientWidth,
-      height,
+      height: chartHeight,
       layout: {
         background: { type: ColorType.Solid, color: "#0B0F14" },
         textColor: "#8B949E",
@@ -114,16 +115,16 @@ export function EquityCurve({
 
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        const { width } = entry.contentRect
-        if (chartRef.current && width > 0) {
-          chartRef.current.applyOptions({ width })
+        const { width, height: h } = entry.contentRect
+        if (chartRef.current && width > 0 && h > 0) {
+          chartRef.current.applyOptions({ width, height: h })
         }
       }
     })
 
     resizeObserver.observe(container)
     resizeObserverRef.current = resizeObserver
-  }, [equityCurve, benchmarkCurve, height])
+  }, [equityCurve, benchmarkCurve])
 
   useEffect(() => {
     createChartInstance()
@@ -142,24 +143,11 @@ export function EquityCurve({
 
   if (!equityCurve || equityCurve.length === 0) {
     return (
-      <div
-        style={{
-          height,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: "#0B0F14",
-          border: "1px solid #1E2A38",
-          borderRadius: 4,
-          color: "#8B949E",
-          fontFamily: "monospace",
-          fontSize: 14,
-        }}
-      >
-        No equity curve data available
+      <div className="w-full h-full flex items-center justify-center bg-[#0B0F14] text-[#8B949E] font-mono text-sm">
+        No equity curve data available. Run the pipeline first.
       </div>
     )
   }
 
-  return <div ref={containerRef} style={{ width: "100%", height }} />
+  return <div ref={containerRef} className="w-full h-full" />
 }

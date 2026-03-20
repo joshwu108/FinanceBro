@@ -1,6 +1,7 @@
 "use client"
 
-import { AlertTriangle, BarChart3, ShieldAlert, Tag, TrendingUp } from "lucide-react"
+import { useEffect, useState } from "react"
+import { AlertTriangle, BarChart3, ShieldAlert, Tag } from "lucide-react"
 import { useAppStore } from "@/lib/store"
 
 // ── Shared UI primitives ─────────────────────────────────────────────────────
@@ -68,6 +69,15 @@ function fmtNum(v: number | undefined | null, decimals = 2): string {
   return v.toFixed(decimals)
 }
 
+function fmtAgo(msAgo: number): string {
+  const s = Math.max(0, Math.floor(msAgo / 1000))
+  if (s < 60) return `${s}s ago`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  return `${h}h ago`
+}
+
 function sharpeColor(v: number | undefined | null): "green" | "red" | "yellow" | "white" {
   if (v == null) return "white"
   if (v >= 1.0) return "green"
@@ -84,7 +94,10 @@ function overfittingBadge(score: number): { bg: string; text: string; border: st
 // ── Main Component ───────────────────────────────────────────────────────────
 
 export function RightSidebar() {
+  const nowMs = useNowMs()
+
   const mode = useAppStore((s) => s.mode)
+  const activeSymbol = useAppStore((s) => s.activeSymbol)
   const activeSymbolResult = useAppStore((s) => s.activeSymbolResult)
   const pipelineResult = useAppStore((s) => s.pipelineResult)
 
@@ -93,6 +106,9 @@ export function RightSidebar() {
   const risk = symbolResult?.risk?.risk_metrics ?? null
   const overfitting = symbolResult?.overfitting ?? null
   const stats = pipelineResult?.stats ?? null
+  const tick = useAppStore((s) => s.liveTickBySymbol[activeSymbol])
+  const quote = useAppStore((s) => s.liveQuoteBySymbol[activeSymbol])
+  const lastUpdatedAt = useAppStore((s) => s.wsLastUpdatedAtBySymbol[activeSymbol])
 
   return (
     <aside className="h-full bg-[#11161C] border-l border-[#1E2A38] flex flex-col overflow-y-auto">
@@ -242,21 +258,49 @@ export function RightSidebar() {
       {/* Live Mode: Signal Box */}
       {mode === "live" && (
         <div className="p-3 border-t border-[#1E2A38] bg-[#0B0F14]">
-          <div className="text-[9px] font-bold uppercase tracking-widest text-[#00FF9C] mb-2">Live Signal</div>
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex flex-col">
-              <span className="text-[9px] text-[#8B949E]">Prediction</span>
-              <span className="text-lg font-bold text-[#00FF9C] tabular-nums">--</span>
-            </div>
-            <div className="bg-[#1E2A38] text-[#8B949E] px-3 py-1.5 rounded-sm">
-              <span className="text-sm font-bold tracking-wider">N/A</span>
-            </div>
+          <div className="text-[9px] font-bold uppercase tracking-widest text-[#4CC9F0] mb-2">
+            Live Market
           </div>
-          <div className="flex items-center justify-between text-[9px] text-[#8B949E]">
-            <span>Awaiting signal...</span>
-          </div>
+
+          <MetricRow
+            label="Last Price"
+            value={fmtNum(tick?.price ?? quote?.askPrice ?? quote?.bidPrice, 2)}
+            color="green"
+          />
+          <MetricRow
+            label="Bid / Ask Spread"
+            value={
+              quote ? fmtNum(quote.askPrice - quote.bidPrice, 4) : "--"
+            }
+            color={quote ? "yellow" : "white"}
+          />
+          <MetricRow
+            label="Trade Size"
+            value={tick?.size != null ? fmtNum(tick.size, 2) : "--"}
+            color="white"
+          />
+          <MetricRow
+            label="Last Updated"
+            value={
+              lastUpdatedAt != null ? fmtAgo(nowMs - lastUpdatedAt) : "--"
+            }
+            color={lastUpdatedAt != null ? "blue" : "white"}
+          />
         </div>
       )}
     </aside>
   )
+}
+
+function useNowMs() {
+  const [now, setNow] = useState(() => Date.now())
+  const mode = useAppStore((s) => s.mode)
+
+  useEffect(() => {
+    if (mode !== "live") return
+    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [mode])
+
+  return now
 }
