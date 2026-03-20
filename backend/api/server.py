@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routes import experiments, pipeline, predict
+from api.routes import data, experiments, pipeline, predict
 
 app = FastAPI(title="FinanceBro Terminal")
 
@@ -14,3 +14,5 @@ app.add_middleware(
 
 app.include_router(pipeline.router)
 app.include_router(predict.router)
+app.include_router(data.router)
+app.include_router(experiments.router)
