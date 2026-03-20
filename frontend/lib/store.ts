@@ -11,7 +11,7 @@ import * as api from "./api"
 
 type Mode = "research" | "live"
 type Status = "IDLE" | "BACKTEST" | "LIVE"
-type ChartTab = "price" | "equity" | "analytics"
+type ChartTab = "price" | "equity" | "analytics" | "portfolio" | "experiments" | "trades"
 
 interface AppState {
   // UI state

@@ -2,21 +2,19 @@
 
 import { useState, useEffect } from "react"
 import { ChevronDown, Activity, Wifi, WifiOff, Clock } from "lucide-react"
+import { useAppStore } from "@/lib/store"
 
 const SYMBOLS = ["SPY", "QQQ", "AAPL", "TSLA", "NVDA", "MSFT", "AMZN", "META", "GOOGL", "BTC-USD", "ETH-USD"]
 
-type Mode = "research" | "live"
 type Status = "LIVE" | "BACKTEST" | "IDLE"
 
-interface TopNavProps {
-  mode: Mode
-  onModeChange: (mode: Mode) => void
-  activeSymbol: string
-  onSymbolChange: (symbol: string) => void
-  status: Status
-}
+export function TopNav() {
+  const mode = useAppStore((s) => s.mode)
+  const setMode = useAppStore((s) => s.setMode)
+  const activeSymbol = useAppStore((s) => s.activeSymbol)
+  const setActiveSymbol = useAppStore((s) => s.setActiveSymbol)
+  const running = useAppStore((s) => s.running)
 
-export function TopNav({ mode, onModeChange, activeSymbol, onSymbolChange, status }: TopNavProps) {
   const [symbolOpen, setSymbolOpen] = useState(false)
   const [now, setNow] = useState<Date | null>(null)
 
@@ -25,6 +23,8 @@ export function TopNav({ mode, onModeChange, activeSymbol, onSymbolChange, statu
     const interval = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(interval)
   }, [])
+
+  const status: Status = mode === "live" ? "LIVE" : running ? "BACKTEST" : "IDLE"
 
   const statusColors: Record<Status, string> = {
     LIVE: "text-[#00FF9C]",
@@ -53,7 +53,7 @@ export function TopNav({ mode, onModeChange, activeSymbol, onSymbolChange, statu
       {/* Mode toggle */}
       <div className="flex items-center bg-[#0B0F14] border border-[#1E2A38] rounded-sm overflow-hidden">
         <button
-          onClick={() => onModeChange("research")}
+          onClick={() => setMode("research")}
           className={`px-3 py-1 text-[10px] uppercase tracking-wider font-semibold transition-colors ${
             mode === "research"
               ? "bg-[#4CC9F0] text-[#0B0F14]"
@@ -63,7 +63,7 @@ export function TopNav({ mode, onModeChange, activeSymbol, onSymbolChange, statu
           Research
         </button>
         <button
-          onClick={() => onModeChange("live")}
+          onClick={() => setMode("live")}
           className={`px-3 py-1 text-[10px] uppercase tracking-wider font-semibold transition-colors ${
             mode === "live"
               ? "bg-[#00FF9C] text-[#0B0F14]"
@@ -90,7 +90,7 @@ export function TopNav({ mode, onModeChange, activeSymbol, onSymbolChange, statu
             {SYMBOLS.map((sym) => (
               <button
                 key={sym}
-                onClick={() => { onSymbolChange(sym); setSymbolOpen(false) }}
+                onClick={() => { setActiveSymbol(sym); setSymbolOpen(false) }}
                 className={`block w-full text-left px-3 py-1.5 text-xs hover:bg-[#1A2130] transition-colors ${
                   sym === activeSymbol ? "text-[#4CC9F0]" : "text-[#E6EDF3]"
                 }`}

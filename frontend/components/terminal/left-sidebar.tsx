@@ -1,12 +1,11 @@
 "use client"
 
 import { useState } from "react"
-import { Play, Database, FlaskConical, Brain, ChevronDown, CheckCircle2, AlertCircle, XCircle } from "lucide-react"
+import { Play, Database, FlaskConical, Brain, ChevronDown } from "lucide-react"
+import { useAppStore } from "@/lib/store"
+import type { PipelineConfig } from "@/lib/types"
 
-interface LeftSidebarProps {
-  onRunPipeline: () => void
-  running: boolean
-}
+// ── Shared UI primitives ─────────────────────────────────────────────────────
 
 function SectionHeader({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
   return (
@@ -21,7 +20,7 @@ function Label({ children }: { children: React.ReactNode }) {
   return <span className="text-[10px] text-[#8B949E] mb-1 block">{children}</span>
 }
 
-function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
+function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return (
     <div className="relative">
       <select
@@ -30,7 +29,7 @@ function Select({ value, onChange, options }: { value: string; onChange: (v: str
         className="w-full bg-[#0B0F14] border border-[#1E2A38] rounded-sm px-2 py-1 text-[11px] text-[#E6EDF3] appearance-none cursor-pointer hover:border-[#4CC9F0] transition-colors focus:outline-none focus:border-[#4CC9F0]"
       >
         {options.map((o) => (
-          <option key={o} value={o}>{o}</option>
+          <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
       <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[#8B949E] pointer-events-none" />
@@ -56,65 +55,50 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
   )
 }
 
-const EXPERIMENT_CONFIGS = [
-  "exp_001_momentum",
-  "exp_002_mean_rev",
-  "exp_003_ml_hybrid",
-  "exp_004_stat_arb",
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const MODEL_OPTIONS = [
+  { value: "logistic_regression", label: "Logistic Regression" },
+  { value: "random_forest", label: "Random Forest" },
 ]
 
-const MODEL_TYPES = [
-  "LightGBM Classifier",
-  "XGBoost Regressor",
-  "LSTM (Sequential)",
-  "Linear Factor Model",
-  "Random Forest",
-]
+// ── Main Component ───────────────────────────────────────────────────────────
 
-const DATA_STATUS = [
-  { symbol: "SPY", status: "loaded" as const },
-  { symbol: "QQQ", status: "cached" as const },
-  { symbol: "AAPL", status: "loaded" as const },
-]
+export function LeftSidebar() {
+  const activeSymbol = useAppStore((s) => s.activeSymbol)
+  const running = useAppStore((s) => s.running)
+  const runPipeline = useAppStore((s) => s.runPipeline)
 
-const statusIcon = {
-  loaded: <CheckCircle2 className="w-3 h-3 text-[#00FF9C]" />,
-  cached: <AlertCircle className="w-3 h-3 text-[#FFD60A]" />,
-  missing: <XCircle className="w-3 h-3 text-[#FF4D4D]" />,
-}
-
-const statusLabel = {
-  loaded: "text-[#00FF9C]",
-  cached: "text-[#FFD60A]",
-  missing: "text-[#FF4D4D]",
-}
-
-export function LeftSidebar({ onRunPipeline, running }: LeftSidebarProps) {
-  const [dateFrom, setDateFrom] = useState("2022-01-01")
-  const [dateTo, setDateTo] = useState("2024-12-31")
-  const [expConfig, setExpConfig] = useState(EXPERIMENT_CONFIGS[0])
+  const [dateFrom, setDateFrom] = useState("2020-01-01")
+  const [dateTo, setDateTo] = useState("2023-01-01")
   const [txCosts, setTxCosts] = useState(true)
-  const [slippage, setSlippage] = useState(false)
-  const [modelType, setModelType] = useState(MODEL_TYPES[0])
-  const [threshold, setThreshold] = useState(0.5)
+  const [slippage, setSlippage] = useState(true)
+  const [modelType, setModelType] = useState("logistic_regression")
+  const [maxPositionSize, setMaxPositionSize] = useState(0.1)
+
+  function handleRunPipeline() {
+    const config: PipelineConfig = {
+      symbols: [activeSymbol],
+      start_date: dateFrom,
+      end_date: dateTo,
+      model_type: modelType,
+      transaction_costs_bps: txCosts ? 5.0 : 0.0,
+      slippage_bps: slippage ? 2.0 : 0.0,
+      max_position_size: maxPositionSize,
+      benchmark: "SPY",
+    }
+    runPipeline(config)
+  }
 
   return (
-    <aside className="w-52 bg-[#11161C] border-r border-[#1E2A38] flex flex-col gap-0 shrink-0 overflow-y-auto">
+    <aside className="h-full bg-[#11161C] border-r border-[#1E2A38] flex flex-col gap-0 overflow-y-auto">
       {/* A. Data Controls */}
       <div className="p-3 border-b border-[#1E2A38]">
         <SectionHeader icon={Database} label="Data Controls" />
 
-        <Label>Symbols</Label>
-        <div className="flex flex-wrap gap-1 mb-2">
-          {DATA_STATUS.map(({ symbol, status }) => (
-            <div
-              key={symbol}
-              className="flex items-center gap-1 bg-[#0B0F14] border border-[#1E2A38] rounded-sm px-1.5 py-0.5"
-            >
-              {statusIcon[status]}
-              <span className={`text-[10px] font-bold ${statusLabel[status]}`}>{symbol}</span>
-            </div>
-          ))}
+        <Label>Active Symbol</Label>
+        <div className="flex items-center gap-1 bg-[#0B0F14] border border-[#1E2A38] rounded-sm px-2 py-1 mb-2">
+          <span className="text-[11px] font-bold text-[#4CC9F0]">{activeSymbol}</span>
         </div>
 
         <Label>Date Range</Label>
@@ -138,13 +122,10 @@ export function LeftSidebar({ onRunPipeline, running }: LeftSidebarProps) {
       <div className="p-3 border-b border-[#1E2A38]">
         <SectionHeader icon={FlaskConical} label="Experiment" />
 
-        <Label>Config</Label>
-        <Select value={expConfig} onChange={setExpConfig} options={EXPERIMENT_CONFIGS} />
-
         <button
-          onClick={onRunPipeline}
+          onClick={handleRunPipeline}
           disabled={running}
-          className="w-full mt-3 flex items-center justify-center gap-2 bg-[#00FF9C] text-[#0B0F14] rounded-sm py-1.5 text-[11px] font-bold uppercase tracking-wider hover:bg-[#00CC7A] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-center gap-2 bg-[#00FF9C] text-[#0B0F14] rounded-sm py-1.5 text-[11px] font-bold uppercase tracking-wider hover:bg-[#00CC7A] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {running ? (
             <>
@@ -170,26 +151,26 @@ export function LeftSidebar({ onRunPipeline, running }: LeftSidebarProps) {
         <SectionHeader icon={Brain} label="Model / Signals" />
 
         <Label>Model Type</Label>
-        <Select value={modelType} onChange={setModelType} options={MODEL_TYPES} />
+        <Select value={modelType} onChange={setModelType} options={MODEL_OPTIONS} />
 
         <div className="mt-3">
           <div className="flex items-center justify-between mb-1">
-            <Label>Threshold</Label>
-            <span className="text-[11px] text-[#4CC9F0] font-bold tabular-nums">{threshold.toFixed(2)}</span>
+            <Label>Max Position Size</Label>
+            <span className="text-[11px] text-[#4CC9F0] font-bold tabular-nums">{(maxPositionSize * 100).toFixed(0)}%</span>
           </div>
           <input
             type="range"
-            min={0}
+            min={0.01}
             max={1}
             step={0.01}
-            value={threshold}
-            onChange={(e) => setThreshold(Number(e.target.value))}
+            value={maxPositionSize}
+            onChange={(e) => setMaxPositionSize(Number(e.target.value))}
             className="w-full accent-[#4CC9F0] h-1 cursor-pointer"
           />
           <div className="flex justify-between text-[9px] text-[#8B949E] mt-0.5">
-            <span>0.0</span>
-            <span>Decision boundary</span>
-            <span>1.0</span>
+            <span>1%</span>
+            <span>Position limit</span>
+            <span>100%</span>
           </div>
         </div>
       </div>
