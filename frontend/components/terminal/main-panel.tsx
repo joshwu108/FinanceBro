@@ -2,8 +2,8 @@
 
 import { useState, useMemo } from "react"
 import {
-  ComposedChart, CandlestickChart, Bar, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, ReferenceLine, Area, AreaChart, LineChart, Legend,
+  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, ReferenceLine, AreaChart, LineChart,
 } from "recharts"
 import { TrendingUp, BarChart2, Layers } from "lucide-react"
 

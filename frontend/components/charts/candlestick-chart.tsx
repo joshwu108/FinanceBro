@@ -41,39 +41,67 @@ function computeSMA(closes: number[], period: number): (number | null)[] {
   return result
 }
 
-function formatOHLCVForChart(data: OHLCVBar[]): CandlestickData<Time>[] {
-  return data.map((bar) => ({
-    time: bar.date.slice(0, 10) as unknown as Time,
+function toChartTime(dateStr: string): Time {
+  // lightweight-charts expects a time in seconds or a business-day string.
+  // For minute bars we use Unix time (UTC) to avoid collapsing multiple candles per day.
+  // Alpaca timestamps can include 6-9 fractional digits; JS Date parsing is most
+  // reliable with millisecond precision.
+  let fixed = dateStr
+  const zMatch = fixed.match(/^(.*T\d{2}:\d{2}:\d{2})\.(\d+)(Z)$/)
+  if (zMatch) {
+    const prefix = zMatch[1]
+    const frac = zMatch[2].slice(0, 3).padEnd(3, "0")
+    fixed = `${prefix}.${frac}Z`
+  } else {
+    const offMatch = fixed.match(/^(.*T\d{2}:\d{2}:\d{2})\.(\d+)([+-]\d{2}:\d{2})$/)
+    if (offMatch) {
+      const prefix = offMatch[1]
+      const frac = offMatch[2].slice(0, 3).padEnd(3, "0")
+      fixed = `${prefix}.${frac}${offMatch[3]}`
+    }
+  }
+
+  const ms = new Date(fixed).getTime()
+  return Math.floor(ms / 1000) as unknown as Time
+}
+
+function formatCandleForBar(bar: OHLCVBar): CandlestickData<Time> {
+  return {
+    time: toChartTime(bar.date),
     open: bar.open,
     high: bar.high,
     low: bar.low,
     close: bar.close,
-  }))
+  }
+}
+
+function formatOHLCVForChart(data: OHLCVBar[]): CandlestickData<Time>[] {
+  return data.map(formatCandleForBar)
 }
 
 function formatVolumeForChart(
   data: OHLCVBar[]
 ): HistogramData<Time>[] {
-  return data.map((bar) => ({
-    time: bar.date.slice(0, 10) as unknown as Time,
-    value: bar.volume,
-    color:
-      bar.close >= bar.open
-        ? "rgba(0, 255, 156, 0.3)"
-        : "rgba(255, 77, 77, 0.3)",
-  }))
+  return data.map((bar) => {
+    const color = bar.close >= bar.open ? "rgba(0, 255, 156, 0.3)" : "rgba(255, 77, 77, 0.3)"
+    return {
+      time: toChartTime(bar.date),
+      value: bar.volume,
+      color,
+    }
+  })
 }
 
 function formatSMAForChart(
-  dates: string[],
+  data: OHLCVBar[],
   smaValues: (number | null)[]
 ): LineData<Time>[] {
   const result: LineData<Time>[] = []
-  for (let i = 0; i < dates.length; i++) {
+  for (let i = 0; i < data.length; i++) {
     const val = smaValues[i]
     if (val !== null) {
       result.push({
-        time: dates[i].slice(0, 10) as unknown as Time,
+        time: toChartTime(data[i].date),
         value: val,
       })
     }
@@ -89,7 +117,7 @@ function buildTradeMarkers(trades: Trade[]): SeriesMarker<Time>[] {
   return sorted.map((trade) => {
     const isBuy = trade.action.toLowerCase() === "buy"
     return {
-      time: trade.date.slice(0, 10) as unknown as Time,
+      time: toChartTime(trade.date),
       position: isBuy ? ("belowBar" as const) : ("aboveBar" as const),
       shape: isBuy ? ("arrowUp" as const) : ("arrowDown" as const),
       color: isBuy ? "#00FF9C" : "#FF4D4D",
@@ -106,15 +134,22 @@ export function CandlestickChart({
   showMA20 = true,
   showMA50 = true,
   showVolume = true,
-  height = 500,
 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
 
+  const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null)
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null)
+  const ma20SeriesRef = useRef<ISeriesApi<"Line"> | null>(null)
+  const ma50SeriesRef = useRef<ISeriesApi<"Line"> | null>(null)
+
+  const lastCandleTimeRef = useRef<Time | null>(null)
+  const initializedRef = useRef(false)
+
   const createChartInstance = useCallback(() => {
     const container = containerRef.current
-    if (!container || data.length === 0) return
+    if (!container) return
 
     // Clean up existing chart
     if (chartRef.current) {
@@ -122,9 +157,11 @@ export function CandlestickChart({
       chartRef.current = null
     }
 
+    const chartHeight = container.clientHeight || 400
+
     const chart = createChart(container, {
       width: container.clientWidth,
-      height,
+      height: chartHeight,
       layout: {
         background: { type: ColorType.Solid, color: "#0B0F14" },
         textColor: "#8B949E",
@@ -142,8 +179,7 @@ export function CandlestickChart({
     chartRef.current = chart
 
     // Candlestick series
-    const candlestickSeries: ISeriesApi<"Candlestick"> =
-      chart.addCandlestickSeries({
+    candlestickSeriesRef.current = chart.addCandlestickSeries({
         upColor: "#00FF9C",
         downColor: "#FF4D4D",
         borderUpColor: "#00FF9C",
@@ -152,31 +188,21 @@ export function CandlestickChart({
         wickDownColor: "#FF4D4D",
       })
 
-    const candleData = formatOHLCVForChart(data)
-    candlestickSeries.setData(candleData)
-
     // Volume histogram
     if (showVolume) {
-      const volumeSeries: ISeriesApi<"Histogram"> =
-        chart.addHistogramSeries({
-          priceFormat: { type: "volume" },
-          priceScaleId: "volume",
-        })
+      volumeSeriesRef.current = chart.addHistogramSeries({
+        priceFormat: { type: "volume" },
+        priceScaleId: "volume",
+      })
 
       chart.priceScale("volume").applyOptions({
         scaleMargins: { top: 0.8, bottom: 0 },
       })
-
-      volumeSeries.setData(formatVolumeForChart(data))
     }
 
     // Moving averages
-    const closes = data.map((bar) => bar.close)
-    const dates = data.map((bar) => bar.date)
-
     if (showMA20) {
-      const sma20Values = computeSMA(closes, 20)
-      const ma20Series: ISeriesApi<"Line"> = chart.addLineSeries({
+      ma20SeriesRef.current = chart.addLineSeries({
         color: "#4CC9F0",
         lineWidth: 1,
         lineStyle: LineStyle.Solid,
@@ -184,12 +210,10 @@ export function CandlestickChart({
         lastValueVisible: false,
         crosshairMarkerVisible: false,
       })
-      ma20Series.setData(formatSMAForChart(dates, sma20Values))
     }
 
     if (showMA50) {
-      const sma50Values = computeSMA(closes, 50)
-      const ma50Series: ISeriesApi<"Line"> = chart.addLineSeries({
+      ma50SeriesRef.current = chart.addLineSeries({
         color: "#FFD60A",
         lineWidth: 1,
         lineStyle: LineStyle.Solid,
@@ -197,17 +221,18 @@ export function CandlestickChart({
         lastValueVisible: false,
         crosshairMarkerVisible: false,
       })
-      ma50Series.setData(formatSMAForChart(dates, sma50Values))
     }
 
     // Trade markers
-    if (trades && trades.length > 0) {
-      const markers = buildTradeMarkers(trades)
-      candlestickSeries.setMarkers(markers)
+    if (trades && trades.length > 0 && candlestickSeriesRef.current) {
+      candlestickSeriesRef.current.setMarkers(buildTradeMarkers(trades))
     }
 
     // Fit content
     chart.timeScale().fitContent()
+
+    initializedRef.current = false
+    lastCandleTimeRef.current = null
 
     // Resize observer
     if (resizeObserverRef.current) {
@@ -216,16 +241,16 @@ export function CandlestickChart({
 
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        const { width } = entry.contentRect
-        if (chartRef.current && width > 0) {
-          chartRef.current.applyOptions({ width })
+        const { width, height: h } = entry.contentRect
+        if (chartRef.current && width > 0 && h > 0) {
+          chartRef.current.applyOptions({ width, height: h })
         }
       }
     })
 
     resizeObserver.observe(container)
     resizeObserverRef.current = resizeObserver
-  }, [data, trades, showMA20, showMA50, showVolume, height])
+  }, [showMA20, showMA50, showVolume])
 
   useEffect(() => {
     createChartInstance()
@@ -242,26 +267,106 @@ export function CandlestickChart({
     }
   }, [createChartInstance])
 
+  // Streaming-friendly updates:
+  // - Candles: update only the last candle (O(1) in the common path).
+  // - Volume: update only the last bar.
+  // - MAs: recompute and setData (acceptable with throttling + capped bar count).
+  useEffect(() => {
+    if (!candlestickSeriesRef.current || !chartRef.current) return
+    if (!data || data.length === 0) return
+
+    const series = candlestickSeriesRef.current
+    const lastBar = data[data.length - 1]
+    const lastCandle = formatCandleForBar(lastBar)
+
+    if (!initializedRef.current) {
+      series.setData(formatOHLCVForChart(data))
+      lastCandleTimeRef.current = lastCandle.time
+      initializedRef.current = true
+
+      if (showVolume && volumeSeriesRef.current) {
+        volumeSeriesRef.current.setData(formatVolumeForChart(data))
+      }
+
+      if (showMA20 && ma20SeriesRef.current) {
+        const closes = data.map((bar) => bar.close)
+        const sma20Values = computeSMA(closes, 20)
+        ma20SeriesRef.current.setData(formatSMAForChart(data, sma20Values))
+      }
+      if (showMA50 && ma50SeriesRef.current) {
+        const closes = data.map((bar) => bar.close)
+        const sma50Values = computeSMA(closes, 50)
+        ma50SeriesRef.current.setData(formatSMAForChart(data, sma50Values))
+      }
+
+      chartRef.current.timeScale().fitContent()
+      return
+    }
+
+    const prevTime = lastCandleTimeRef.current
+    const nextTime = lastCandle.time
+
+    // If the incoming data is out of order, resync to avoid chart corruption.
+    const nextMs = typeof nextTime === "number" ? nextTime : null
+    const prevMs = prevTime && typeof prevTime === "number" ? prevTime : null
+    if (prevMs !== null && nextMs !== null && nextMs < prevMs) {
+      series.setData(formatOHLCVForChart(data))
+      lastCandleTimeRef.current = nextTime
+      if (showVolume && volumeSeriesRef.current) {
+        volumeSeriesRef.current.setData(formatVolumeForChart(data))
+      }
+
+      if (showMA20 && ma20SeriesRef.current) {
+        const closes = data.map((bar) => bar.close)
+        const sma20Values = computeSMA(closes, 20)
+        ma20SeriesRef.current.setData(formatSMAForChart(data, sma20Values))
+      }
+      if (showMA50 && ma50SeriesRef.current) {
+        const closes = data.map((bar) => bar.close)
+        const sma50Values = computeSMA(closes, 50)
+        ma50SeriesRef.current.setData(formatSMAForChart(data, sma50Values))
+      }
+      chartRef.current?.timeScale().fitContent()
+    } else if (prevTime === nextTime) {
+      series.update(lastCandle)
+    } else {
+      series.update(lastCandle)
+      lastCandleTimeRef.current = nextTime
+    }
+
+    if (showVolume && volumeSeriesRef.current) {
+      const lastVolume = formatVolumeForChart([lastBar])[0]
+      volumeSeriesRef.current.update(lastVolume)
+    }
+
+    // Update MAs to reflect new candle.
+    const closes = data.map((bar) => bar.close)
+    if (showMA20 && ma20SeriesRef.current) {
+      const sma20Values = computeSMA(closes, 20)
+      ma20SeriesRef.current.setData(formatSMAForChart(data, sma20Values))
+    }
+    if (showMA50 && ma50SeriesRef.current) {
+      const sma50Values = computeSMA(closes, 50)
+      ma50SeriesRef.current.setData(formatSMAForChart(data, sma50Values))
+    }
+  }, [data, showMA20, showMA50, showVolume])
+
+  useEffect(() => {
+    if (!candlestickSeriesRef.current) return
+    if (!trades || trades.length === 0) {
+      candlestickSeriesRef.current.setMarkers([])
+      return
+    }
+    candlestickSeriesRef.current.setMarkers(buildTradeMarkers(trades))
+  }, [trades])
+
   if (!data || data.length === 0) {
     return (
-      <div
-        style={{
-          height,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: "#0B0F14",
-          border: "1px solid #1E2A38",
-          borderRadius: 4,
-          color: "#8B949E",
-          fontFamily: "monospace",
-          fontSize: 14,
-        }}
-      >
-        No price data available
+      <div className="w-full h-full flex items-center justify-center bg-[#0B0F14] text-[#8B949E] font-mono text-sm">
+        No price data available. Run the pipeline or select a symbol.
       </div>
     )
   }
 
-  return <div ref={containerRef} style={{ width: "100%", height }} />
+  return <div ref={containerRef} className="w-full h-full" />
 }

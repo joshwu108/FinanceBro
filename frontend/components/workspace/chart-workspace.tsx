@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect } from "react"
 import { useAppStore } from "@/lib/store"
 import { CandlestickChart } from "@/components/charts/candlestick-chart"
 import { EquityCurve } from "@/components/charts/equity-curve"
@@ -11,7 +12,9 @@ import { RollingSharpe } from "@/components/charts/rolling-sharpe"
 import { PortfolioView } from "@/components/workspace/portfolio-view"
 import { ExperimentBrowser } from "@/components/workspace/experiment-browser"
 import { TradeLogTable } from "@/components/workspace/trade-log-table"
+import { useAlpacaStream } from "@/lib/websocket"
 import type { EquityCurvePoint, PipelineResponse, PerformanceSummary } from "@/lib/types"
+import * as api from "@/lib/api"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -45,16 +48,45 @@ const TABS = [
 // ── Main Component ───────────────────────────────────────────────────────────
 
 export function ChartWorkspace() {
+  const mode = useAppStore((s) => s.mode)
   const chartTab = useAppStore((s) => s.chartTab)
   const setChartTab = useAppStore((s) => s.setChartTab)
   const activeSymbolResult = useAppStore((s) => s.activeSymbolResult)
   const ohlcvData = useAppStore((s) => s.ohlcvData)
+  const liveMinuteBars = useAppStore((s) => s.liveMinuteBars)
+  const setLiveMinuteBars = useAppStore((s) => s.setLiveMinuteBars)
   const activeSymbol = useAppStore((s) => s.activeSymbol)
   const pipelineResult = useAppStore((s) => s.pipelineResult)
   const experiments = useAppStore((s) => s.experiments)
   const fetchExperiments = useAppStore((s) => s.fetchExperiments)
 
+  useAlpacaStream(activeSymbol, mode === "live")
+
+  useEffect(() => {
+    if (mode !== "live") return
+    const bars = liveMinuteBars[activeSymbol] ?? []
+    if (bars.length > 0) return
+
+    // Initial context for the chart before the first WS bar arrives.
+    api.fetchMarketSnapshot(activeSymbol)
+      .then((snapshotBars) => {
+        setLiveMinuteBars(activeSymbol, snapshotBars)
+      })
+      .catch((err) => {
+        // Snapshot failures shouldn't break the whole UI.
+        console.error("Failed to fetch market snapshot:", err)
+      })
+  }, [mode, activeSymbol, liveMinuteBars, setLiveMinuteBars])
+
   const symbolResult = activeSymbolResult()
+
+  const livePriceData =
+    liveMinuteBars[activeSymbol] ?? []
+
+  const priceData =
+    mode === "live"
+      ? livePriceData
+      : symbolResult?.backtest?.ohlcv ?? ohlcvData[activeSymbol] ?? []
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -76,25 +108,29 @@ export function ChartWorkspace() {
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div className="flex-1 min-h-0 overflow-hidden">
         {chartTab === "price" && (
-          <CandlestickChart
-            data={symbolResult?.backtest?.ohlcv ?? ohlcvData[activeSymbol] ?? []}
-            trades={symbolResult?.backtest?.trade_log}
-            showMA20
-            showMA50
-            showVolume
-          />
+          <div className="w-full h-full">
+            <CandlestickChart
+              data={priceData}
+              trades={mode === "live" ? [] : symbolResult?.backtest?.trade_log}
+              showMA20
+              showMA50
+              showVolume
+            />
+          </div>
         )}
 
         {chartTab === "equity" && (
-          <EquityCurve
-            equityCurve={symbolResult?.backtest?.equity_curve ?? []}
-          />
+          <div className="w-full h-full">
+            <EquityCurve
+              equityCurve={symbolResult?.backtest?.equity_curve ?? []}
+            />
+          </div>
         )}
 
         {chartTab === "analytics" && (
-          <div className="grid grid-cols-2 gap-2 p-2">
+          <div className="grid grid-cols-2 gap-2 p-2 overflow-auto h-full">
             <DrawdownChart
               equityCurve={symbolResult?.backtest?.equity_curve ?? []}
               height={200}

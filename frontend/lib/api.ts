@@ -19,10 +19,22 @@ export async function runPipeline(
     body: JSON.stringify(config),
   })
   if (!response.ok) {
-    const errorText = await response.text().catch(() => "Unknown error")
-    throw new Error(`Failed to run pipeline: ${response.status} ${errorText}`)
+    let message = "Unknown error"
+    try {
+      const body = await response.json()
+      const detail = body?.detail
+      if (typeof detail === "string") message = detail
+      else if (detail?.message) message = detail.message
+      else message = JSON.stringify(detail ?? body)
+    } catch {
+      const errorText = await response.text().catch(() => "Unknown error")
+      message = errorText
+    }
+    throw new Error(`Failed to run pipeline: ${response.status} ${message}`)
   }
-  return response.json()
+  // Backend wraps in { status: "success", data: {...} }
+  const json = await response.json()
+  return json.data ?? json
 }
 
 export async function fetchOHLCV(
@@ -41,7 +53,9 @@ export async function fetchOHLCV(
       `Failed to fetch OHLCV for ${symbol}: ${response.status} ${errorText}`
     )
   }
-  return response.json()
+  // Backend wraps in { symbol, data: [...] }
+  const json = await response.json()
+  return json.data ?? json
 }
 
 export async function fetchExperiments(): Promise<ExperimentSummary[]> {
@@ -52,7 +66,9 @@ export async function fetchExperiments(): Promise<ExperimentSummary[]> {
       `Failed to fetch experiments: ${response.status} ${errorText}`
     )
   }
-  return response.json()
+  // Backend wraps in { experiments: [...] }
+  const json = await response.json()
+  return json.experiments ?? json
 }
 
 export async function fetchExperiment(runId: string): Promise<any> {
@@ -81,4 +97,23 @@ export async function predict(
     )
   }
   return response.json()
+}
+
+export async function fetchMarketSnapshot(symbol: string): Promise<OHLCVBar[]> {
+  const sym = symbol.trim().toUpperCase()
+  const response = await fetch(`${API_BASE}/api/market/snapshot/${sym}`)
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "Unknown error")
+    throw new Error(`Failed to fetch market snapshot for ${sym}: ${response.status} ${errorText}`)
+  }
+  const json = await response.json()
+  const bars = json?.bars ?? []
+  return bars.map((b: any) => ({
+    date: b.date,
+    open: Number(b.open),
+    high: Number(b.high),
+    low: Number(b.low),
+    close: Number(b.close),
+    volume: Number(b.volume),
+  }))
 }
