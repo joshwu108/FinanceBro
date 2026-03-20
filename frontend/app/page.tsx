@@ -6,7 +6,8 @@ import { LeftSidebar } from "@/components/terminal/left-sidebar"
 import { MainPanel } from "@/components/terminal/main-panel"
 import { RightSidebar } from "@/components/terminal/right-sidebar"
 import { BottomPanel } from "@/components/terminal/bottom-panel"
-import { runPipeline, type PipelineConfig } from "@/lib/api"
+import { runPipeline } from "@/lib/api"
+import type { PipelineConfig } from "@/lib/types"
 
 type Mode = "research" | "live"
 
