@@ -1,6 +1,9 @@
 "use client"
 
-import { AlertTriangle, BarChart3, ShieldAlert, Tag } from "lucide-react"
+import { AlertTriangle, BarChart3, ShieldAlert, Tag, TrendingUp } from "lucide-react"
+import { useAppStore } from "@/lib/store"
+
+// ── Shared UI primitives ─────────────────────────────────────────────────────
 
 function SectionHeader({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
   return (
@@ -53,63 +56,186 @@ function MetricRow({ label, value, color = "white", bar }: MetricRowProps) {
   )
 }
 
-interface RightSidebarProps {
-  mode: "research" | "live"
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmtPct(v: number | undefined | null): string {
+  if (v == null) return "--"
+  return `${(v * 100).toFixed(1)}%`
 }
 
-export function RightSidebar({ mode }: RightSidebarProps) {
+function fmtNum(v: number | undefined | null, decimals = 2): string {
+  if (v == null) return "--"
+  return v.toFixed(decimals)
+}
+
+function sharpeColor(v: number | undefined | null): "green" | "red" | "yellow" | "white" {
+  if (v == null) return "white"
+  if (v >= 1.0) return "green"
+  if (v >= 0) return "yellow"
+  return "red"
+}
+
+function overfittingBadge(score: number): { bg: string; text: string; border: string; label: string } {
+  if (score < 0.3) return { bg: "bg-[#00FF9C]/10", text: "text-[#00FF9C]", border: "border-[#00FF9C]/30", label: "Low" }
+  if (score <= 0.6) return { bg: "bg-[#FFD60A]/10", text: "text-[#FFD60A]", border: "border-[#FFD60A]/30", label: "Medium" }
+  return { bg: "bg-[#FF4D4D]/10", text: "text-[#FF4D4D]", border: "border-[#FF4D4D]/30", label: "High" }
+}
+
+// ── Main Component ───────────────────────────────────────────────────────────
+
+export function RightSidebar() {
+  const mode = useAppStore((s) => s.mode)
+  const activeSymbolResult = useAppStore((s) => s.activeSymbolResult)
+  const pipelineResult = useAppStore((s) => s.pipelineResult)
+
+  const symbolResult = activeSymbolResult()
+  const perf = symbolResult?.backtest?.performance_summary ?? null
+  const risk = symbolResult?.risk?.risk_metrics ?? null
+  const overfitting = symbolResult?.overfitting ?? null
+  const stats = pipelineResult?.stats ?? null
+
   return (
-    <aside className="w-52 bg-[#11161C] border-l border-[#1E2A38] flex flex-col shrink-0 overflow-y-auto">
+    <aside className="h-full bg-[#11161C] border-l border-[#1E2A38] flex flex-col overflow-y-auto">
       {/* A. Performance Metrics */}
       <div className="p-3 border-b border-[#1E2A38]">
         <SectionHeader icon={BarChart3} label="Performance" />
-        <MetricRow label="Sharpe Ratio" value="1.84" color="green" bar={0.72} />
-        <MetricRow label="Sortino Ratio" value="2.31" color="green" bar={0.78} />
-        <MetricRow label="Max Drawdown" value="-12.4%" color="red" bar={0.42} />
-        <MetricRow label="Total Return" value="+34.7%" color="green" bar={0.65} />
-        <MetricRow label="Win Rate" value="58.2%" color="blue" bar={0.58} />
-        <MetricRow label="Profit Factor" value="1.63" color="green" bar={0.55} />
+        <MetricRow
+          label="Sharpe Ratio"
+          value={fmtNum(perf?.sharpe)}
+          color={sharpeColor(perf?.sharpe)}
+          bar={perf?.sharpe != null ? Math.min(1, Math.abs(perf.sharpe) / 3) : undefined}
+        />
+        <MetricRow
+          label="Sortino Ratio"
+          value={fmtNum(perf?.sortino)}
+          color={sharpeColor(perf?.sortino)}
+          bar={perf?.sortino != null ? Math.min(1, Math.abs(perf.sortino) / 3) : undefined}
+        />
+        <MetricRow
+          label="Max Drawdown"
+          value={fmtPct(perf?.max_drawdown)}
+          color="red"
+          bar={perf?.max_drawdown != null ? Math.abs(perf.max_drawdown) : undefined}
+        />
+        <MetricRow
+          label="Total Return"
+          value={fmtPct(perf?.total_return)}
+          color={perf?.total_return != null && perf.total_return >= 0 ? "green" : "red"}
+          bar={perf?.total_return != null ? Math.min(1, Math.abs(perf.total_return)) : undefined}
+        />
+        <MetricRow
+          label="Win Rate"
+          value={fmtPct(perf?.win_rate)}
+          color="blue"
+          bar={perf?.win_rate != null ? perf.win_rate : undefined}
+        />
+        <MetricRow
+          label="Total Trades"
+          value={perf?.total_trades != null ? String(perf.total_trades) : "--"}
+          color="white"
+        />
       </div>
 
       {/* B. Risk Panel */}
       <div className="p-3 border-b border-[#1E2A38]">
         <SectionHeader icon={ShieldAlert} label="Risk Panel" />
-        <MetricRow label="Volatility (Ann.)" value="18.3%" color="yellow" bar={0.35} />
-        <MetricRow label="Beta (vs SPY)" value="0.72" color="blue" bar={0.72} />
-        <MetricRow label="Exposure (Gross)" value="87.5%" color="white" bar={0.875} />
-        <MetricRow label="Turnover (Daily)" value="4.2%" color="white" bar={0.12} />
-        <MetricRow label="VaR (95%, 1D)" value="-1.8%" color="yellow" bar={0.25} />
+        <MetricRow
+          label="VaR (95%, 1D)"
+          value={fmtPct(risk?.var_95)}
+          color="yellow"
+          bar={risk?.var_95 != null ? Math.abs(risk.var_95) : undefined}
+        />
+        <MetricRow
+          label="VaR (99%, 1D)"
+          value={fmtPct(risk?.var_99)}
+          color="yellow"
+          bar={risk?.var_99 != null ? Math.abs(risk.var_99) : undefined}
+        />
+        <MetricRow
+          label="CVaR (95%)"
+          value={fmtPct(risk?.cvar_95)}
+          color="red"
+          bar={risk?.cvar_95 != null ? Math.abs(risk.cvar_95) : undefined}
+        />
+        <MetricRow
+          label="Max Exposure"
+          value={fmtPct(risk?.max_position_exposure)}
+          color="white"
+          bar={risk?.max_position_exposure != null ? risk.max_position_exposure : undefined}
+        />
+        <MetricRow
+          label="VaR Breaches"
+          value={risk?.var_breaches != null ? String(risk.var_breaches) : "--"}
+          color={risk?.var_breaches != null && risk.var_breaches > 0 ? "red" : "white"}
+        />
 
-        {/* Warning flags */}
-        <div className="mt-2 space-y-1">
-          <div className="flex items-center gap-1.5 bg-[#FFD60A]/10 border border-[#FFD60A]/30 rounded-sm px-2 py-1">
-            <AlertTriangle className="w-3 h-3 text-[#FFD60A] shrink-0" />
-            <span className="text-[9px] text-[#FFD60A]">Elevated drawdown risk</span>
+        {/* Overfitting warning */}
+        {overfitting != null && overfitting.overfitting_score > 0.5 && (
+          <div className="mt-2 space-y-1">
+            <div className="flex items-center gap-1.5 bg-[#FFD60A]/10 border border-[#FFD60A]/30 rounded-sm px-2 py-1">
+              <AlertTriangle className="w-3 h-3 text-[#FFD60A] shrink-0" />
+              <span className="text-[9px] text-[#FFD60A]">Elevated overfitting risk</span>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5 bg-[#FF4D4D]/10 border border-[#FF4D4D]/30 rounded-sm px-2 py-1">
-            <AlertTriangle className="w-3 h-3 text-[#FF4D4D] shrink-0" />
-            <span className="text-[9px] text-[#FF4D4D]">High concentration — NVDA</span>
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* C. Experiment Metadata */}
-      <div className="p-3">
-        <SectionHeader icon={Tag} label="Experiment" />
-        <div className="space-y-1.5">
-          {[
-            { label: "Exp ID", value: "EXP-20240318-004" },
-            { label: "Timestamp", value: "2024-03-18 09:32" },
-            { label: "Dataset Ver", value: "v2.4.1" },
-            { label: "Model Ver", value: "lgbm-v3.2" },
-            { label: "Lookback", value: "60 bars" },
-            { label: "Features", value: "47 (PCA 12)" },
-          ].map(({ label, value }) => (
-            <div key={label} className="flex flex-col">
-              <span className="text-[9px] text-[#8B949E] uppercase tracking-wider">{label}</span>
-              <span className="text-[10px] text-[#E6EDF3] font-mono">{value}</span>
+      {/* C. Overfitting & Significance */}
+      <div className="p-3 border-b border-[#1E2A38]">
+        <SectionHeader icon={Tag} label="Validation" />
+        <div className="space-y-2">
+          {/* Overfitting score */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[9px] text-[#8B949E] uppercase tracking-wider">Overfitting Score</span>
+            {overfitting != null ? (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-mono font-bold text-[#E6EDF3]">{fmtNum(overfitting.overfitting_score)}</span>
+                {(() => {
+                  const badge = overfittingBadge(overfitting.overfitting_score)
+                  return (
+                    <span className={`${badge.bg} ${badge.text} border ${badge.border} text-[9px] px-1.5 py-0.5 rounded-sm`}>
+                      {badge.label}
+                    </span>
+                  )
+                })()}
+              </div>
+            ) : (
+              <span className="text-[11px] text-[#8B949E] font-mono">--</span>
+            )}
+          </div>
+
+          {/* Statistical significance */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[9px] text-[#8B949E] uppercase tracking-wider">Statistical Significance</span>
+            {stats?.hypothesis_test != null ? (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-mono font-bold text-[#E6EDF3]">
+                  p={fmtNum(stats.hypothesis_test.p_value, 4)}
+                </span>
+                <span
+                  className={`text-[9px] px-1.5 py-0.5 rounded-sm border ${
+                    stats.hypothesis_test.is_significant
+                      ? "bg-[#00FF9C]/10 text-[#00FF9C] border-[#00FF9C]/30"
+                      : "bg-[#FF4D4D]/10 text-[#FF4D4D] border-[#FF4D4D]/30"
+                  }`}
+                >
+                  {stats.hypothesis_test.is_significant ? "Significant" : "Not Significant"}
+                </span>
+              </div>
+            ) : (
+              <span className="text-[11px] text-[#8B949E] font-mono">--</span>
+            )}
+          </div>
+
+          {/* Walk-forward summary */}
+          {symbolResult?.walk_forward?.aggregated_metrics != null && (
+            <div className="flex flex-col gap-1">
+              <span className="text-[9px] text-[#8B949E] uppercase tracking-wider">Walk-Forward Sharpe</span>
+              <span className="text-[11px] font-mono font-bold text-[#E6EDF3]">
+                {fmtNum(symbolResult.walk_forward.aggregated_metrics.mean_sharpe)} +/- {fmtNum(symbolResult.walk_forward.aggregated_metrics.std_sharpe)}
+              </span>
             </div>
-          ))}
+          )}
         </div>
       </div>
 
@@ -120,15 +246,14 @@ export function RightSidebar({ mode }: RightSidebarProps) {
           <div className="flex items-center justify-between mb-2">
             <div className="flex flex-col">
               <span className="text-[9px] text-[#8B949E]">Prediction</span>
-              <span className="text-lg font-bold text-[#00FF9C] tabular-nums">0.742</span>
+              <span className="text-lg font-bold text-[#00FF9C] tabular-nums">--</span>
             </div>
-            <div className="bg-[#00FF9C] text-[#0B0F14] px-3 py-1.5 rounded-sm">
-              <span className="text-sm font-bold tracking-wider">BUY</span>
+            <div className="bg-[#1E2A38] text-[#8B949E] px-3 py-1.5 rounded-sm">
+              <span className="text-sm font-bold tracking-wider">N/A</span>
             </div>
           </div>
           <div className="flex items-center justify-between text-[9px] text-[#8B949E]">
-            <span>Updated: 09:32:14</span>
-            <span className="text-[#4CC9F0]">Latency: 3.2ms</span>
+            <span>Awaiting signal...</span>
           </div>
         </div>
       )}
