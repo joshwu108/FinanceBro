@@ -42,6 +42,9 @@ class WalkForwardAgent(BaseAgent):
         "n_folds": 5,
         "min_train_size": 126,   # ~6 months of trading days
         "test_size": 63,         # ~3 months of trading days
+        "allow_short_train": True,
+        "min_train_size_min": 30,
+        "min_folds": 1,
         "model_config": {
             "model_type": "logistic_regression",
         },
@@ -102,18 +105,67 @@ class WalkForwardAgent(BaseAgent):
         n_folds = cfg["n_folds"]
         min_train_size = cfg["min_train_size"]
         test_size = cfg["test_size"]
+        allow_short_train = cfg.get("allow_short_train", True)
+        min_train_size_min = cfg.get("min_train_size_min", 30)
+        min_folds = cfg.get("min_folds", 1)
         model_config = cfg.get("model_config", {})
         backtest_config = cfg.get("backtest_config", {})
         signal_threshold = cfg.get("signal_threshold", 0.5)
 
         total_rows = len(X)
         required_rows = min_train_size + n_folds * test_size
+        adjustments: Dict[str, Any] = {}
         if total_rows < required_rows:
-            raise ValueError(
-                f"Insufficient data: have {total_rows} rows, need at least "
-                f"{required_rows} (min_train_size={min_train_size} + "
-                f"{n_folds} folds * test_size={test_size})"
+            if not allow_short_train:
+                raise ValueError(
+                    f"Insufficient data: have {total_rows} rows, need at least "
+                    f"{required_rows} (min_train_size={min_train_size} + "
+                    f"{n_folds} folds * test_size={test_size})"
+                )
+
+            effective_n_folds: Optional[int] = None
+            effective_min_train_size: Optional[int] = None
+
+            max_candidate_folds = min(n_folds, total_rows // test_size)
+            for candidate_folds in range(max_candidate_folds, min_folds - 1, -1):
+                train_needed = total_rows - candidate_folds * test_size
+                if train_needed >= min_train_size_min:
+                    effective_n_folds = candidate_folds
+                    effective_min_train_size = train_needed
+                    break
+
+            if effective_n_folds is None or effective_min_train_size is None:
+                raise ValueError(
+                    "Insufficient data for walk-forward validation. "
+                    f"have {total_rows} usable feature rows; test_size={test_size}, "
+                    f"min_train_size_min={min_train_size_min}, "
+                    "and we could not find a feasible (n_folds, train_window) "
+                    "combination. Provide a wider date range so FeatureAgent "
+                    "can compute rolling indicators (e.g., SMA-200) with no NaNs."
+                )
+
+            logger.warning(
+                "WalkForwardAgent auto-adjusting: total_rows=%d < required_rows=%d. "
+                "Using n_folds=%d (requested=%d) and min_train_size=%d (requested=%d).",
+                total_rows,
+                required_rows,
+                effective_n_folds,
+                n_folds,
+                effective_min_train_size,
+                min_train_size,
             )
+            adjustments = {
+                "requested_n_folds": n_folds,
+                "effective_n_folds": effective_n_folds,
+                "requested_min_train_size": min_train_size,
+                "effective_min_train_size": effective_min_train_size,
+                "test_size": test_size,
+                "note": "Validation rigor degraded due to short history.",
+            }
+            n_folds = effective_n_folds
+            min_train_size = effective_min_train_size
+
+            required_rows = min_train_size + n_folds * test_size
 
         fold_boundaries = self._compute_fold_boundaries(
             total_rows=total_rows,
@@ -154,6 +206,8 @@ class WalkForwardAgent(BaseAgent):
             "aggregated_metrics": aggregated,
             "n_folds": len(fold_results),
         }
+        if adjustments:
+            outputs["adjustments"] = adjustments
 
         self.validate(inputs, outputs)
 

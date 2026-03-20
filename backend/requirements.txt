@@ -53,6 +53,7 @@ python-socketio==5.10.0
 httpx==0.25.2
 openai==1.12.0
 langchain-openai==0.1.0
+alpaca-py
 
 # Development
 pytest==7.4.3
