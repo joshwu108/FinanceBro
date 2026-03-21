@@ -8,6 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.websockets import WebSocketDisconnect
 from workers.tasks import evaluate_tick
 
 ROOT_ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
@@ -82,17 +83,20 @@ async def websocket_endpoint(websocket: WebSocket, symbol: str):
 
     async def recv_loop() -> None:
         nonlocal last_pong
-        while True:
-            msg = await websocket.receive_text()
-            if msg == "pong":
-                last_pong = time.monotonic()
-                continue
-            try:
-                parsed = json.loads(msg)
-            except Exception:
-                continue
-            if isinstance(parsed, dict) and parsed.get("type") == "pong":
-                last_pong = time.monotonic()
+        try:
+            while True:
+                msg = await websocket.receive_text()
+                if msg == "pong":
+                    last_pong = time.monotonic()
+                    continue
+                try:
+                    parsed = json.loads(msg)
+                except Exception:
+                    continue
+                if isinstance(parsed, dict) and parsed.get("type") == "pong":
+                    last_pong = time.monotonic()
+        except WebSocketDisconnect:
+            pass
 
     async def send_loop() -> None:
         ping_interval_s = 15
@@ -114,11 +118,23 @@ async def websocket_endpoint(websocket: WebSocket, symbol: str):
                 next_ping_at = time.monotonic() + ping_interval_s
 
                 if time.monotonic() - last_pong > pong_timeout_s:
-                    await websocket.close(code=1011)
+                    await websocket.close(code=1001)
                     break
 
     try:
-        await asyncio.gather(recv_loop(), send_loop())
+        recv_task = asyncio.create_task(recv_loop())
+        send_task = asyncio.create_task(send_loop())
+        _done, pending = await asyncio.wait(
+            {recv_task, send_task}, return_when=asyncio.FIRST_COMPLETED
+        )
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, WebSocketDisconnect):
+                pass
+    except WebSocketDisconnect:
+        pass
     finally:
         await manager.disconnect(websocket)
 

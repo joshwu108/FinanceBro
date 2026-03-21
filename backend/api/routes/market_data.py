@@ -49,9 +49,10 @@ async def market_snapshot(symbol: str) -> Dict[str, Any]:
             detail="Alpaca credentials are not configured. Set ALPACA_KEY and ALPACA_SECRET.",
         )
 
-    # Fetch a small rolling window so the chart has immediate context.
+    # Fetch enough history to cover the last trading session even when
+    # market is closed (evenings, weekends, holidays).
     end = datetime.now(timezone.utc)
-    start = end - timedelta(minutes=180)
+    start = end - timedelta(days=3)
 
     alpaca_base_url = (os.getenv("ALPACA_BASE_URL") or "").strip().lower()
     data_base_url = os.getenv("ALPACA_DATA_BASE_URL", "").strip()
@@ -69,7 +70,7 @@ async def market_snapshot(symbol: str) -> Dict[str, Any]:
         "timeframe": "1Min",
         "start": start.isoformat().replace("+00:00", "Z"),
         "end": end.isoformat().replace("+00:00", "Z"),
-        "limit": 200,
+        "limit": 1000,
         "feed": feed,
         "sort": "asc",
     }
