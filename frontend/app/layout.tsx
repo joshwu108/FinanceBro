@@ -10,9 +10,11 @@ const ibmPlexMono = IBM_Plex_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'FinanceBro Terminal',
+  title: {
+    default: 'FinanceBro',
+    template: '%s | FinanceBro',
+  },
   description: 'Quantitative research and trading platform — backtesting, experiment tracking, real-time inference.',
-  generator: 'v0.app',
 }
 
 export default function RootLayout({
@@ -22,7 +24,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={ibmPlexMono.variable}>
-      <body className="font-mono antialiased bg-[#0B0F14] text-[#E6EDF3] overflow-hidden">
+      <body className="font-mono antialiased bg-[#0B0F14] text-[#E6EDF3]">
         {children}
         <Analytics />
       </body>
