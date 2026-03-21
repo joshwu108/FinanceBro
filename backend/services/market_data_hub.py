@@ -5,13 +5,12 @@ from datetime import datetime, time, timezone
 from typing import Any, Dict, Optional, Set
 from zoneinfo import ZoneInfo
 import json
-import redis
+import redis.asyncio as aioredis
 
 from services.alpaca_stream import AlpacaBar, AlpacaQuote, AlpacaStreamClient, AlpacaTrade
 
 import os
 redis_host = os.getenv("REDIS_HOST", "localhost")
-r = redis.Redis(host=redis_host, port=6379, db=1)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +50,7 @@ class MarketDataHub:
         self._alpaca_client: Optional[AlpacaStreamClient] = None
 
         self._alpaca_connected = False
+        self._redis = aioredis.Redis(host=redis_host, port=6379, db=1)
 
         if self._alpaca_enabled:
             self._alpaca_client = AlpacaStreamClient(
@@ -96,26 +96,25 @@ class MarketDataHub:
             self._kafka_producer.flush(timeout=2)
         if self._alpaca_client:
             await self._alpaca_client.stop()
+        await self._redis.aclose()
 
     async def _listen_for_signals(self) -> None:
         """Subscribe to Redis pubsub for worker signal results and broadcast them."""
         SIGNAL_CHANNEL = "financebro:signals"
-        # Re-initialize Redis connection inside the loop to ensure fresh connections in Docker.
-        _r = redis.Redis(host=redis_host, port=6379, db=1, decode_responses=True)
-        
+
+        _ar: Optional[aioredis.Redis] = None
+        pubsub = None
+
         while True:
             try:
-                pubsub = _r.pubsub()
-                pubsub.subscribe(SIGNAL_CHANNEL)
+                _ar = aioredis.Redis(host=redis_host, port=6379, db=1, decode_responses=True)
+                pubsub = _ar.pubsub()
+                await pubsub.subscribe(SIGNAL_CHANNEL)
                 logger.info("Subscribed to Redis signal channel: %s", SIGNAL_CHANNEL)
-                
-                # Use a separate thread or loop for checking messages to avoid blocking.
-                while True:
-                    msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-                    if msg is None:
-                        await asyncio.sleep(0.1)
+
+                async for msg in pubsub.listen():
+                    if msg["type"] != "message":
                         continue
-                    
                     try:
                         data = json.loads(msg["data"])
                     except (json.JSONDecodeError, TypeError):
@@ -124,7 +123,7 @@ class MarketDataHub:
                     symbol = data.get("symbol", "").strip().upper()
                     if not symbol:
                         continue
-                    
+
                     envelope = {
                         "type": "signal",
                         "symbol": symbol,
@@ -136,7 +135,20 @@ class MarketDataHub:
                 break
             except Exception:
                 logger.exception("Signal subscriber error; reconnecting in 5s")
-                await asyncio.sleep(5)
+                try:
+                    await asyncio.sleep(5)
+                except asyncio.CancelledError:
+                    break
+            finally:
+                try:
+                    if pubsub is not None:
+                        await pubsub.unsubscribe(SIGNAL_CHANNEL)
+                        pubsub = None
+                    if _ar is not None:
+                        await _ar.aclose()
+                        _ar = None
+                except Exception:
+                    pass
 
     @property
     def enabled(self) -> bool:
@@ -230,7 +242,7 @@ class MarketDataHub:
             "timestamp": bar.date,
         }
         feature_payload = json.dumps(asdict(bar))
-        r.set(f"features:{bar.symbol}", feature_payload)
+        await self._redis.set(f"features:{bar.symbol}", feature_payload)
         await self._broadcast(bar.symbol, envelope)
 
     async def _handle_quote(self, quote: AlpacaQuote) -> None:
