@@ -4,11 +4,23 @@ from dataclasses import asdict
 from datetime import datetime, time, timezone
 from typing import Any, Dict, Optional, Set
 from zoneinfo import ZoneInfo
+import json
+import redis
 
 from services.alpaca_stream import AlpacaBar, AlpacaQuote, AlpacaStreamClient, AlpacaTrade
 
+import os
+redis_host = os.getenv("REDIS_HOST", "localhost")
+r = redis.Redis(host=redis_host, port=6379, db=1)
+
 logger = logging.getLogger(__name__)
 
+
+try:
+    from confluent_kafka import Producer as _KafkaProducer
+except ImportError:
+    _KafkaProducer = None
+    logger.warning("confluent-kafka not installed; Kafka publishing disabled")
 
 class MarketDataHub:
     """
@@ -54,22 +66,83 @@ class MarketDataHub:
                 on_quote=self._handle_quote,
                 on_trade=self._handle_trade,
             )
+        
+        # Initialize Kafka producer (graceful fallback if unavailable).
+        self._kafka_producer = None
+        if _KafkaProducer is not None:
+            kafka_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+            self._kafka_producer = _KafkaProducer({
+                'bootstrap.servers': kafka_servers,
+                'socket.timeout.ms': 2000,
+                'message.timeout.ms': 5000,
+        })
 
     async def start(self) -> None:
+        self._signal_task = asyncio.create_task(
+            self._listen_for_signals(), name="signal_subscriber"
+        )
         if not self._alpaca_client:
             return
         await self._alpaca_client.start()
 
     async def shutdown(self) -> None:
+        if hasattr(self, "_signal_task") and self._signal_task:
+            self._signal_task.cancel()
+            try:
+                await self._signal_task
+            except asyncio.CancelledError:
+                pass
+        if self._kafka_producer is not None:
+            self._kafka_producer.flush(timeout=2)
         if self._alpaca_client:
             await self._alpaca_client.stop()
+
+    async def _listen_for_signals(self) -> None:
+        """Subscribe to Redis pubsub for worker signal results and broadcast them."""
+        SIGNAL_CHANNEL = "financebro:signals"
+        # Re-initialize Redis connection inside the loop to ensure fresh connections in Docker.
+        _r = redis.Redis(host=redis_host, port=6379, db=1, decode_responses=True)
+        
+        while True:
+            try:
+                pubsub = _r.pubsub()
+                pubsub.subscribe(SIGNAL_CHANNEL)
+                logger.info("Subscribed to Redis signal channel: %s", SIGNAL_CHANNEL)
+                
+                # Use a separate thread or loop for checking messages to avoid blocking.
+                while True:
+                    msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                    if msg is None:
+                        await asyncio.sleep(0.1)
+                        continue
+                    
+                    try:
+                        data = json.loads(msg["data"])
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+
+                    symbol = data.get("symbol", "").strip().upper()
+                    if not symbol:
+                        continue
+                    
+                    envelope = {
+                        "type": "signal",
+                        "symbol": symbol,
+                        "signal": data.get("signal"),
+                        "confidence": data.get("confidence"),
+                    }
+                    await self._broadcast(symbol, envelope)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("Signal subscriber error; reconnecting in 5s")
+                await asyncio.sleep(5)
 
     @property
     def enabled(self) -> bool:
         return self._alpaca_enabled
 
     def _market_open(self, *, now: Optional[datetime] = None) -> bool:
-        # 9:30am-4:00pm ET, weekdays only. (Approximation; doesn't handle holidays.)
         now = now or datetime.now(timezone.utc)
         et = now.astimezone(ZoneInfo("America/New_York"))
         if et.weekday() >= 5:
@@ -156,6 +229,8 @@ class MarketDataHub:
             },
             "timestamp": bar.date,
         }
+        feature_payload = json.dumps(asdict(bar))
+        r.set(f"features:{bar.symbol}", feature_payload)
         await self._broadcast(bar.symbol, envelope)
 
     async def _handle_quote(self, quote: AlpacaQuote) -> None:
@@ -184,5 +259,16 @@ class MarketDataHub:
             },
             "timestamp": trade.date,
         }
+        if self._kafka_producer is not None:
+            try:
+                msg = json.dumps(envelope)
+                self._kafka_producer.produce(
+                    'market-ticks',
+                    value=msg.encode(),
+                    key=trade.symbol.encode(),
+                )
+                self._kafka_producer.poll(0)
+            except Exception:
+                logger.debug("Kafka publish failed for %s", trade.symbol)
         await self._broadcast(trade.symbol, envelope)
 

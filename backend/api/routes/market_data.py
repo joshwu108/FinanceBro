@@ -35,7 +35,6 @@ async def market_status(request: Request) -> Dict[str, Any]:
         return {"enabled": False, "alpaca_connected": False, "market_open": False}
     return hub.status()
 
-
 @router.get("/api/market/snapshot/{symbol}")
 async def market_snapshot(symbol: str) -> Dict[str, Any]:
     """Function to get the current stock price of a symbol"""

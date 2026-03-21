@@ -1,5 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from agents.feature_agent import FeatureAgent
+from agents.model_agent import ModelAgent
+import yfinance as yf
 
 from api.predict_service import get_inference_bundle, predict_for_symbol
 

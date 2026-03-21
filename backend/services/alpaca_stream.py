@@ -100,7 +100,7 @@ class AlpacaStreamClient:
         self.subscribe_quotes = subscribe_quotes
         self.subscribe_bars = subscribe_bars
 
-        self.heartbeat_timeout_s = heartbeat_timeout_s
+        self.heartbeat_timeout_s = 60 
 
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._stop_event = asyncio.Event()
@@ -269,9 +269,18 @@ class AlpacaStreamClient:
     async def _read_loop(self) -> None:
         assert self._ws is not None
         while not self._stop_event.is_set():
-            raw = await asyncio.wait_for(self._ws.recv(), timeout=self.heartbeat_timeout_s)
-            if raw is None:
-                raise ConnectionError("Alpaca websocket closed")
+            try:
+                raw = await asyncio.wait_for(self._ws.recv(), timeout=self.heartbeat_timeout_s)
+                
+                if raw is None:
+                    raise ConnectionError("Alpaca websocket closed")
+            except asyncio.TimeoutError:
+                logger.debug("Alpaca stream read timeout (market silent); continuing listener")
+                continue 
+            except Exception as e:
+                # Fatal errors like ConnectionRefused or ProtocolError
+                logger.error("Alpaca stream read encountered fatal error: %s", e)
+                raise
 
             try:
                 messages = json.loads(raw)

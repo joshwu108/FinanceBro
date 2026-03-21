@@ -8,6 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from workers.tasks import evaluate_tick
 
 ROOT_ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 load_dotenv(dotenv_path=ROOT_ENV_PATH, override=False)
@@ -103,6 +104,10 @@ async def websocket_endpoint(websocket: WebSocket, symbol: str):
             try:
                 payload = await asyncio.wait_for(queue.get(), timeout=remaining)
                 await websocket.send_json(payload)
+                if payload.get("type") == "trade":
+                    trade_data = payload.get("trade", {})
+                    price = trade_data.get("price")
+                    evaluate_tick.delay(symbol, price, {})
             except asyncio.TimeoutError:
                 # Time to ping (and validate that the client is responding).
                 await websocket.send_json({"type": "ping", "ts": datetime.now(timezone.utc).isoformat()})
