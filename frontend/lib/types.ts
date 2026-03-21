@@ -307,4 +307,10 @@ export type WSMessage =
   | {
       type: "pong"
     }
+  | {
+      type: "signal"
+      symbol: string
+      signal: string
+      confidence?: number
+    }
 

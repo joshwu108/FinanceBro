@@ -1,0 +1,59 @@
+services:
+  # The Database / Bus Tier
+  redis:
+    image: redis:alpine
+    ports: ["6379:6379"]
+
+  kafka:
+    image: redpandadata/redpanda:latest
+    command:
+      - redpanda start
+      - --overprovisioned
+      - --smp 1
+      - --memory 1G
+      - --reserve-memory 0M
+      - --node-id 0
+      - --check=false
+      - --kafka-addr plaintext://0.0.0.0:29092,outside://0.0.0.0:9092
+      - --advertise-kafka-addr plaintext://kafka:29092,outside://localhost:9092
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+
+
+  # The API Tier (FastAPI)
+  api:
+    build: ./backend
+    command: uvicorn api.server:app --host 0.0.0.0 --port 8000
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - TASK_REDIS_URL=redis://redis:6379/1
+      - REDIS_HOST=redis
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    depends_on:
+      - redis
+      - kafka
+
+  # The Worker Tier (Celery)
+  worker:
+    build: ./backend
+    command: celery -A workers.celery_app worker --loglevel=info -Q financebro_queue
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - TASK_REDIS_URL=redis://redis:6379/1
+    depends_on:
+      - redis
+      - kafka
+      - api

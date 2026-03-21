@@ -59,24 +59,21 @@ export function ChartWorkspace() {
   const pipelineResult = useAppStore((s) => s.pipelineResult)
   const experiments = useAppStore((s) => s.experiments)
   const fetchExperiments = useAppStore((s) => s.fetchExperiments)
+  const liveSignalBySymbol = useAppStore((s) => s.liveSignalBySymbol)
 
   useAlpacaStream(activeSymbol, mode === "live")
 
   useEffect(() => {
-    if (mode !== "live") return
-    const bars = liveMinuteBars[activeSymbol] ?? []
-    if (bars.length > 0) return
-
-    // Initial context for the chart before the first WS bar arrives.
-    api.fetchMarketSnapshot(activeSymbol)
-      .then((snapshotBars) => {
-        setLiveMinuteBars(activeSymbol, snapshotBars)
+    if (mode !== "live") return;
+    const existingBars = ohlcvData[activeSymbol] || [];
+    if (existingBars.length === 0) {
+      api.fetchMarketSnapshot(activeSymbol).then((bars) => {
+        useAppStore.setState((state) => ({
+          ohlcvData: { ...state.ohlcvData, [activeSymbol]: bars }
+        }))
       })
-      .catch((err) => {
-        // Snapshot failures shouldn't break the whole UI.
-        console.error("Failed to fetch market snapshot:", err)
-      })
-  }, [mode, activeSymbol, liveMinuteBars, setLiveMinuteBars])
+    }
+  }, [mode, activeSymbol, ohlcvData])
 
   const symbolResult = activeSymbolResult()
 
@@ -85,7 +82,7 @@ export function ChartWorkspace() {
 
   const priceData =
     mode === "live"
-      ? livePriceData
+      ? ohlcvData[activeSymbol] || []
       : symbolResult?.backtest?.ohlcv ?? ohlcvData[activeSymbol] ?? []
 
   return (
@@ -110,7 +107,7 @@ export function ChartWorkspace() {
       {/* Tab content */}
       <div className="flex-1 min-h-0 overflow-hidden">
         {chartTab === "price" && (
-          <div className="w-full h-full">
+          <div className="w-full h-full relative">
             <CandlestickChart
               data={priceData}
               trades={mode === "live" ? [] : symbolResult?.backtest?.trade_log}
@@ -118,6 +115,42 @@ export function ChartWorkspace() {
               showMA50
               showVolume
             />
+            
+            {/* Live Agent Signal Indicator */}
+            {mode === "live" && liveSignalBySymbol[activeSymbol] && (
+              <div className="absolute top-4 right-4 z-10 bg-[#0B0F14]/90 border border-[#1E2A38] p-3 rounded-md backdrop-blur-sm shadow-xl min-w-[140px]">
+                <div className="text-[10px] text-[#8B949E] uppercase tracking-widest mb-1.5 font-bold">
+                  Live Agent Signal
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className={`text-xl font-black tracking-tighter ${
+                    liveSignalBySymbol[activeSymbol]?.signal === "LONG" ? "text-[#00C076]" :
+                    liveSignalBySymbol[activeSymbol]?.signal === "SHORT" ? "text-[#FF4D4D]" :
+                    "text-[#8B949E]"
+                  }`}>
+                    {liveSignalBySymbol[activeSymbol]?.signal}
+                  </div>
+                  {liveSignalBySymbol[activeSymbol]?.confidence !== undefined && (
+                    <div className="flex flex-col">
+                      <div className="text-[8px] text-[#8B949E] uppercase leading-none mb-0.5">Confidence</div>
+                      <div className="text-xs font-mono text-[#E6EDF3]">
+                        {(liveSignalBySymbol[activeSymbol]?.confidence! * 100).toFixed(1)}%
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="mt-2 h-1 w-full bg-[#1E2A38] rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full transition-all duration-500 ${
+                      liveSignalBySymbol[activeSymbol]?.signal === "LONG" ? "bg-[#00C076]" :
+                      liveSignalBySymbol[activeSymbol]?.signal === "SHORT" ? "bg-[#FF4D4D]" :
+                      "bg-[#8B949E]"
+                    }`}
+                    style={{ width: `${(liveSignalBySymbol[activeSymbol]?.confidence ?? 0.5) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
 
