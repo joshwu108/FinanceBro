@@ -23,6 +23,7 @@ export function useAlpacaStream(symbol: string, enabled: boolean) {
   const setWsStatus = useAppStore((s) => s.setWsStatus)
   const setLiveTick = useAppStore((s) => s.setLiveTick)
   const setLiveQuote = useAppStore((s) => s.setLiveQuote)
+  const setLiveSignal = useAppStore((s) => s.setLiveSignal)
   const upsertLiveBar = useAppStore((s) => s.upsertLiveBar)
   const setLiveMinuteBars = useAppStore((s) => s.setLiveMinuteBars)
 
@@ -114,6 +115,11 @@ export function useAlpacaStream(symbol: string, enabled: boolean) {
             setLiveQuote(sym, parsed.quote)
             return
           }
+
+          if (parsed.type === "signal") {
+            setLiveSignal(sym, { signal: parsed.signal, confidence: parsed.confidence })
+            return
+          }
         } catch {
           // Ignore malformed websocket payloads.
         }
@@ -152,6 +158,6 @@ export function useAlpacaStream(symbol: string, enabled: boolean) {
         flushTimeoutRef.current = null
       }
     }
-  }, [symbol, enabled, setLiveMinuteBars, setLiveQuote, setLiveTick, setWsStatus, upsertLiveBar])
+  }, [symbol, enabled, setLiveMinuteBars, setLiveQuote, setLiveSignal, setLiveTick, setWsStatus, upsertLiveBar])
 }
 

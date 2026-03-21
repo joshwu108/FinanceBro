@@ -41,11 +41,13 @@ interface AppState {
   liveTickBySymbol: Record<string, LiveTick | null>
   liveQuoteBySymbol: Record<string, LiveQuote | null>
   liveMinuteBars: Record<string, OHLCVBar[]>
+  liveSignalBySymbol: Record<string, { signal: string; confidence?: number } | null>
   setWsStatus: (status: WSStatus, error?: string | null) => void
   setLiveMinuteBars: (symbol: string, bars: OHLCVBar[]) => void
   upsertLiveBar: (symbol: string, bar: OHLCVBar) => void
   setLiveTick: (symbol: string, tick: LiveTick | null) => void
   setLiveQuote: (symbol: string, quote: LiveQuote | null) => void
+  setLiveSignal: (symbol: string, signal: { signal: string; confidence?: number } | null) => void
 
   // Logs
   logs: LogEntry[]
@@ -105,6 +107,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   liveTickBySymbol: {},
   liveQuoteBySymbol: {},
   liveMinuteBars: {},
+  liveSignalBySymbol: {},
   setWsStatus: (status, error = null) => set({ wsStatus: status, wsError: error }),
   setLiveMinuteBars: (symbol, bars) =>
     set((state) => {
@@ -163,6 +166,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => {
       const sym = symbol.trim().toUpperCase()
       return { liveQuoteBySymbol: { ...state.liveQuoteBySymbol, [sym]: quote } }
+    }),
+  setLiveSignal: (symbol, signal) =>
+    set((state) => {
+      const sym = symbol.trim().toUpperCase()
+      return { liveSignalBySymbol: { ...state.liveSignalBySymbol, [sym]: signal } }
     }),
 
   // Logs
