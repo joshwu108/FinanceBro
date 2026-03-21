@@ -1,10 +1,12 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from agents.feature_agent import FeatureAgent
+from agents.model_agent import ModelAgent
+import yfinance as yf
 
 from api.predict_service import get_inference_bundle, predict_for_symbol
 
 router = APIRouter()
-
 
 class PredictRequest(BaseModel):
     symbol: str = Field(..., min_length=1, description="Ticker symbol, e.g. AAPL")
@@ -57,3 +59,18 @@ def predict(body: PredictRequest) -> PredictResponse:
         ) from e
 
     return PredictResponse(**out)
+
+@router.get("/api/predict/{symbol}")
+async def predict_latest(symbol: str):
+    ticker = yf.Ticker(symbol)
+    df = ticker.history(period="1d", interval="1m")
+    feature_agent = FeatureAgent()
+    features = feature_agent.run({"cleaned_data": df})
+    model_agent = ModelAgent()
+    model_agent.load_model(f"models/{symbol}_final.joblib")
+    prediction = model_agent.predict(features.tail(1))
+    return {
+        "symbol": symbol,
+        "prediction": prediction,
+        "timestamp": df.index[-1]
+    }
