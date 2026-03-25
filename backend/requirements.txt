@@ -34,3 +34,18 @@ ta>=0.10.2
 requests==2.31.0
 beautifulsoup4==4.12.2
 lxml==4.9.3
+
+# Quantum Computing
+qiskit>=1.0
+qiskit-aer>=0.14
+qiskit-algorithms>=0.3
+qiskit-optimization>=0.6
+qiskit-machine-learning>=0.7
+
+# Classical Optimization (Markowitz baseline)
+cvxpy>=1.4
+scipy>=1.11
+
+# Testing
+pytest>=7.0
+pytest-cov>=4.0
