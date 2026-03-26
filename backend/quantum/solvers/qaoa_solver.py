@@ -1,8 +1,7 @@
 """QAOA solver — Quantum Approximate Optimization Algorithm.
 
-Implements QAOA using direct statevector simulation (numpy).
-For small qubit counts (< 20), this is faster than Qiskit Aer
-and demonstrates understanding of the quantum mechanics.
+Implements QAOA using direct statevector simulation (numpy), with optional
+C++ acceleration for hot-path kernels (build_cost_diagonal, apply_mixer_unitary).
 
 The QAOA circuit for a QUBO problem:
     |psi(gamma,beta)> = prod_{p=1}^{P} [U_M(beta_p) * U_C(gamma_p)] |+>^n
@@ -12,6 +11,7 @@ where:
     U_M(beta)  = exp(-i*beta*B)  — mixer unitary (B = sum X_i)
 """
 
+import logging
 import time
 from typing import Any, Dict, Optional
 
@@ -24,6 +24,22 @@ from quantum.solvers.problem_encodings import (
     evaluate_qubo,
     portfolio_to_qubo,
 )
+
+logger = logging.getLogger(__name__)
+
+# Try to load C++ accelerated kernels
+try:
+    from quantum.cpp import (
+        build_cost_diagonal as _cpp_build_cost_diagonal,
+        apply_cost_unitary as _cpp_apply_cost_unitary,
+        apply_mixer_unitary as _cpp_apply_mixer_unitary,
+        qaoa_expectation as _cpp_qaoa_expectation,
+        HAS_CPP,
+    )
+    logger.info("QAOA solver: C++ acceleration available")
+except ImportError:
+    HAS_CPP = False
+    logger.info("QAOA solver: using pure Python (C++ not available)")
 
 
 def build_cost_diagonal(Q: np.ndarray) -> np.ndarray:
@@ -97,9 +113,7 @@ def simulate_qaoa_expectation(
 ) -> float:
     """Compute <psi(gamma,beta)|C|psi(gamma,beta)>.
 
-    1. Start with |+>^n
-    2. Apply p rounds of U_C(gamma_p) then U_M(beta_p)
-    3. Compute expectation: sum |alpha_x|^2 * C(x)
+    Uses C++ acceleration when available, falls back to Python.
 
     Args:
         Q: QUBO matrix (n, n).
@@ -114,6 +128,14 @@ def simulate_qaoa_expectation(
     """
     if len(gamma) != len(beta):
         raise ValueError("gamma and beta must have the same length")
+
+    # Use C++ fast path when available
+    if HAS_CPP:
+        return float(_cpp_qaoa_expectation(
+            np.ascontiguousarray(Q, dtype=np.float64),
+            np.ascontiguousarray(gamma, dtype=np.float64),
+            np.ascontiguousarray(beta, dtype=np.float64),
+        ))
 
     n = Q.shape[0]
     num_states = 1 << n
