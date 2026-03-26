@@ -279,10 +279,11 @@ class TestComparisonMetrics:
 
     def test_p_value_with_enough_repetitions(self):
         """p_value is computed when n >= 5."""
-        # Clearly different distributions
-        classical_obj = [10.0, 11.0, 10.5, 9.5, 10.2]
-        quantum_obj = [5.0, 5.5, 4.5, 5.2, 4.8]
-        runtimes = [1.0] * 5
+        # Clearly different distributions — need n >= 6 for Wilcoxon to
+        # reach p < 0.05 (min possible p for n=5 is 0.0625).
+        classical_obj = [10.0, 11.0, 10.5, 9.5, 10.2, 10.8, 9.8, 10.3]
+        quantum_obj = [5.0, 5.5, 4.5, 5.2, 4.8, 5.3, 4.7, 5.1]
+        runtimes = [1.0] * 8
 
         metrics = compute_comparison_metrics(
             classical_objectives=classical_obj,
