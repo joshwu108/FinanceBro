@@ -14,7 +14,18 @@ from workers.tasks import evaluate_tick
 ROOT_ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 load_dotenv(dotenv_path=ROOT_ENV_PATH, override=False)
 
-from api.routes import data, experiments, market_data, pipeline, predict
+from api.routes import (
+    benchmarks,
+    data,
+    experiments,
+    market_data,
+    pipeline,
+    predict,
+    quantum_backtest,
+    quantum_ml,
+    quantum_montecarlo,
+    quantum_portfolio,
+)
 from api.websocket_manager import manager
 
 app = FastAPI(title="FinanceBro Terminal")
@@ -32,6 +43,11 @@ app.include_router(predict.router)
 app.include_router(data.router)
 app.include_router(experiments.router)
 app.include_router(market_data.router)
+app.include_router(quantum_portfolio.router)
+app.include_router(quantum_montecarlo.router)
+app.include_router(quantum_ml.router)
+app.include_router(quantum_backtest.router)
+app.include_router(benchmarks.router)
 
 
 # ── Live Market Data Hub ──────────────────────────────────────────────────────

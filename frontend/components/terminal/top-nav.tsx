@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ChevronDown, Activity, Wifi, WifiOff, Clock } from "lucide-react"
+import { ChevronDown, Activity, Wifi, WifiOff, Clock, CircleDot } from "lucide-react"
 import { useAppStore } from "@/lib/store"
+import * as api from "@/lib/api"
 
 const SYMBOLS = ["SPY", "QQQ", "AAPL", "TSLA", "NVDA", "MSFT", "AMZN", "META", "GOOGL", "BTC-USD", "ETH-USD"]
 
@@ -18,12 +19,22 @@ export function TopNav() {
 
   const [symbolOpen, setSymbolOpen] = useState(false)
   const [now, setNow] = useState<Date | null>(null)
+  const [marketOpen, setMarketOpen] = useState<boolean | null>(null)
 
   useEffect(() => {
     setNow(new Date())
     const interval = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+    if (mode !== "live") return
+    api.fetchMarketStatus().then((s) => setMarketOpen(s.market_open))
+    const interval = setInterval(() => {
+      api.fetchMarketStatus().then((s) => setMarketOpen(s.market_open))
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [mode])
 
   const status: Status =
     mode === "live"
@@ -129,6 +140,18 @@ export function TopNav() {
             : "Loading..."}
         </span>
       </div>
+
+      {/* Market status indicator (live mode only) */}
+      {mode === "live" && marketOpen !== null && (
+        <>
+          <div className="flex items-center gap-1.5">
+            <CircleDot className={`w-3 h-3 ${marketOpen ? "text-[#00FF9C]" : "text-[#FF4D4D]"}`} />
+            <span className={`text-[9px] font-bold uppercase tracking-wider ${marketOpen ? "text-[#00FF9C]" : "text-[#FF4D4D]"}`}>
+              {marketOpen ? "MKT OPEN" : "MKT CLOSED"}
+            </span>
+          </div>
+        </>
+      )}
 
       <div className="w-px h-5 bg-[#1E2A38]" />
 

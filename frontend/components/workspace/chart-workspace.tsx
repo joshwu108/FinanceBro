@@ -13,6 +13,8 @@ import { PortfolioView } from "@/components/workspace/portfolio-view"
 import { ExperimentBrowser } from "@/components/workspace/experiment-browser"
 import { TradeLogTable } from "@/components/workspace/trade-log-table"
 import { useAlpacaStream } from "@/lib/websocket"
+import { PredictionPanel } from "@/components/workspace/prediction-panel"
+import { QuantumWorkspace } from "@/components/quantum/quantum-workspace"
 import type { EquityCurvePoint, PipelineResponse, PerformanceSummary } from "@/lib/types"
 import * as api from "@/lib/api"
 
@@ -43,6 +45,8 @@ const TABS = [
   { id: "portfolio" as const, label: "Portfolio" },
   { id: "experiments" as const, label: "Experiments" },
   { id: "trades" as const, label: "Trades" },
+  { id: "predict" as const, label: "Predict" },
+  { id: "quantum" as const, label: "Quantum" },
 ] as const
 
 // ── Main Component ───────────────────────────────────────────────────────────
@@ -203,6 +207,14 @@ export function ChartWorkspace() {
 
         {chartTab === "trades" && (
           <TradeLogTable trades={symbolResult?.backtest?.trade_log ?? []} />
+        )}
+
+        {chartTab === "predict" && (
+          <PredictionPanel />
+        )}
+
+        {chartTab === "quantum" && (
+          <QuantumWorkspace />
         )}
       </div>
     </div>

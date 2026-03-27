@@ -16,6 +16,7 @@ from agents.quantum.quantum_backtester import (
     rebalance_portfolio,
     compute_performance_metrics,
 )
+from quantum.noise.noise_model import NoiseModel
 
 
 # ---------------------------------------------------------------------------
@@ -235,3 +236,98 @@ class TestBacktesterComparison:
         assert "classical" in comparison
         assert "qaoa" in comparison
         assert "classical" in comparison and isinstance(comparison["classical"], BacktestResult)
+
+
+# ===========================================================================
+# 7. Noise-aware backtesting
+# ===========================================================================
+
+class TestNoiseAwareBacktest:
+
+    def test_noisy_qaoa_runs(self, returns_data):
+        bt = QuantumBacktester(config={
+            "initial_capital": 100_000,
+            "transaction_cost_bps": 5,
+            "slippage_bps": 3,
+            "rebalance_frequency": 42,
+            "optimizer": "noisy_qaoa",
+            "max_weight": 0.50,
+            "qaoa_layers": 2,
+            "weight_precision_bits": 3,
+            "qaoa_seed": 42,
+            "lookback_window": 60,
+            "noise_model": NoiseModel(
+                single_qubit_error=0.01,
+                two_qubit_error=0.02,
+                readout_error=0.01,
+            ),
+        })
+        result = bt.run(returns_data)
+        assert isinstance(result, BacktestResult)
+        assert result.optimizer_name == "noisy_qaoa"
+
+    def test_mitigated_qaoa_runs(self, returns_data):
+        bt = QuantumBacktester(config={
+            "initial_capital": 100_000,
+            "transaction_cost_bps": 5,
+            "slippage_bps": 3,
+            "rebalance_frequency": 42,
+            "optimizer": "mitigated_qaoa",
+            "max_weight": 0.50,
+            "qaoa_layers": 2,
+            "weight_precision_bits": 3,
+            "qaoa_seed": 42,
+            "lookback_window": 60,
+            "noise_model": NoiseModel(
+                single_qubit_error=0.01,
+                two_qubit_error=0.02,
+                readout_error=0.01,
+            ),
+        })
+        result = bt.run(returns_data)
+        assert isinstance(result, BacktestResult)
+        assert result.optimizer_name == "mitigated_qaoa"
+
+    def test_noise_aware_compare_returns_all_modes(self, returns_data):
+        bt = QuantumBacktester(config={
+            "initial_capital": 100_000,
+            "transaction_cost_bps": 5,
+            "slippage_bps": 3,
+            "rebalance_frequency": 42,
+            "max_weight": 0.50,
+            "lookback_window": 60,
+        })
+        noise = NoiseModel(
+            single_qubit_error=0.01,
+            two_qubit_error=0.02,
+            readout_error=0.01,
+        )
+        comparison = bt.noise_aware_compare(
+            returns_data,
+            noise_model=noise,
+            qaoa_config={"qaoa_layers": 2, "weight_precision_bits": 3, "qaoa_seed": 42},
+        )
+        assert "classical" in comparison
+        assert "qaoa_ideal" in comparison
+        assert "qaoa_noisy" in comparison
+        assert "qaoa_mitigated" in comparison
+        assert "summary" in comparison
+
+    def test_summary_has_metrics(self, returns_data):
+        bt = QuantumBacktester(config={
+            "initial_capital": 100_000,
+            "transaction_cost_bps": 5,
+            "slippage_bps": 3,
+            "rebalance_frequency": 42,
+            "max_weight": 0.50,
+            "lookback_window": 60,
+        })
+        noise = NoiseModel(single_qubit_error=0.02, two_qubit_error=0.05)
+        comparison = bt.noise_aware_compare(
+            returns_data, noise_model=noise,
+            qaoa_config={"qaoa_layers": 2, "weight_precision_bits": 3, "qaoa_seed": 42},
+        )
+        for mode in ["classical", "qaoa_ideal", "qaoa_noisy", "qaoa_mitigated"]:
+            assert mode in comparison["summary"]
+            assert "total_return" in comparison["summary"][mode]
+            assert "sharpe_ratio" in comparison["summary"][mode]
