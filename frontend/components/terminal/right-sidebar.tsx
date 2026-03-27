@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { AlertTriangle, BarChart3, ShieldAlert, Tag } from "lucide-react"
+import { AlertTriangle, BarChart3, ShieldAlert, Tag, Atom } from "lucide-react"
 import { useAppStore } from "@/lib/store"
 
 // ── Shared UI primitives ─────────────────────────────────────────────────────
@@ -255,6 +255,9 @@ export function RightSidebar() {
         </div>
       </div>
 
+      {/* Quantum Metrics (visible when quantum results exist) */}
+      <QuantumMetrics />
+
       {/* Live Mode: Signal Box */}
       {mode === "live" && (
         <div className="p-3 border-t border-[#1E2A38] bg-[#0B0F14]">
@@ -289,6 +292,47 @@ export function RightSidebar() {
         </div>
       )}
     </aside>
+  )
+}
+
+function QuantumMetrics() {
+  const portfolioResult = useAppStore((s) => s.quantumPortfolioResult)
+  const backtestResult = useAppStore((s) => s.quantumBacktestResult)
+
+  if (!portfolioResult && !backtestResult) return null
+
+  return (
+    <div className="p-3 border-b border-[#1E2A38]">
+      <SectionHeader icon={Atom} label="Quantum" />
+      {portfolioResult?.comparison && (
+        <>
+          <MetricRow
+            label="Weight Distance"
+            value={fmtNum(portfolioResult.comparison.weight_distance, 4)}
+            color="blue"
+          />
+          <MetricRow
+            label="Runtime Ratio"
+            value={`${fmtNum(portfolioResult.comparison.runtime_ratio, 1)}x`}
+            color="yellow"
+          />
+        </>
+      )}
+      {backtestResult?.summary?.classical && backtestResult?.summary?.qaoa_mitigated && (
+        <>
+          <MetricRow
+            label="Classical Sharpe"
+            value={fmtNum(backtestResult.summary.classical.sharpe_ratio)}
+            color="blue"
+          />
+          <MetricRow
+            label="Mitigated Sharpe"
+            value={fmtNum(backtestResult.summary.qaoa_mitigated.sharpe_ratio)}
+            color="green"
+          />
+        </>
+      )}
+    </div>
   )
 }
 

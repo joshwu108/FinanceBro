@@ -99,6 +99,18 @@ export async function predict(
   return response.json()
 }
 
+export async function fetchMarketStatus(): Promise<{
+  enabled: boolean
+  alpaca_connected: boolean
+  market_open: boolean
+}> {
+  const response = await fetch(`${API_BASE}/api/market/status`)
+  if (!response.ok) {
+    return { enabled: false, alpaca_connected: false, market_open: false }
+  }
+  return response.json()
+}
+
 export async function fetchMarketSnapshot(symbol: string): Promise<OHLCVBar[]> {
   const sym = symbol.trim().toUpperCase()
   const response = await fetch(`${API_BASE}/api/market/snapshot/${sym}`)

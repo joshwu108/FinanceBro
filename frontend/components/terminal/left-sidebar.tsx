@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Play, Database, FlaskConical, Brain, ChevronDown } from "lucide-react"
+import { Play, Database, FlaskConical, Brain, ChevronDown, Atom } from "lucide-react"
 import { useAppStore } from "@/lib/store"
 import type { PipelineConfig } from "@/lib/types"
 
@@ -171,6 +171,44 @@ export function LeftSidebar() {
             <span>1%</span>
             <span>Position limit</span>
             <span>100%</span>
+          </div>
+        </div>
+      </div>
+      {/* D. Quantum Controls */}
+      <div className="p-3 border-t border-[#1E2A38]">
+        <SectionHeader icon={Atom} label="Quantum" />
+
+        <div className="flex flex-col gap-2">
+          <Label>QAOA Layers</Label>
+          <div className="flex items-center gap-2">
+            {[1, 2, 3, 4].map((n) => (
+              <button
+                key={n}
+                className="flex-1 bg-[#0B0F14] border border-[#1E2A38] rounded-sm py-0.5 text-[10px] text-[#8B949E] hover:border-[#4CC9F0] hover:text-[#4CC9F0] transition-colors"
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+
+          <Label>Noise Model</Label>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] text-[#8B949E]">1-Qubit Error</span>
+              <span className="text-[10px] text-[#4CC9F0] font-mono">1.0%</span>
+            </div>
+            <input
+              type="range" min={0} max={0.1} step={0.005} defaultValue={0.01}
+              className="w-full accent-[#4CC9F0] h-1 cursor-pointer"
+            />
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] text-[#8B949E]">2-Qubit Error</span>
+              <span className="text-[10px] text-[#4CC9F0] font-mono">2.0%</span>
+            </div>
+            <input
+              type="range" min={0} max={0.2} step={0.005} defaultValue={0.02}
+              className="w-full accent-[#4CC9F0] h-1 cursor-pointer"
+            />
           </div>
         </div>
       </div>

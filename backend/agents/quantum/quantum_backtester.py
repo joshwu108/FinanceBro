@@ -19,6 +19,7 @@ from sklearn.covariance import LedoitWolf
 from quantum.solvers.classical_solvers import solve_markowitz_scipy
 from quantum.solvers.problem_encodings import decode_binary_weights, portfolio_to_qubo
 from quantum.solvers.qaoa_solver import QAOASolver
+from quantum.noise.noise_model import NoiseModel
 
 logger = logging.getLogger(__name__)
 
@@ -242,6 +243,66 @@ class QuantumBacktester:
             results[opt_name] = bt.run(returns)
         return results
 
+    def noise_aware_compare(
+        self,
+        returns: pd.DataFrame,
+        noise_model: Optional[NoiseModel] = None,
+        qaoa_config: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Compare: classical vs ideal QAOA vs noisy QAOA vs mitigated QAOA.
+
+        Demonstrates how quantum noise degrades portfolio quality and
+        error mitigation partially recovers it.
+        """
+        if noise_model is None:
+            noise_model = NoiseModel(
+                single_qubit_error=0.01,
+                two_qubit_error=0.02,
+                readout_error=0.01,
+            )
+
+        base_cfg = {**self._config}
+        if qaoa_config:
+            base_cfg.update(qaoa_config)
+
+        results: Dict[str, Any] = {}
+
+        # Classical baseline
+        bt_classical = QuantumBacktester(config={**base_cfg, "optimizer": "classical"})
+        results["classical"] = bt_classical.run(returns)
+
+        # Ideal QAOA (no noise)
+        bt_ideal = QuantumBacktester(config={**base_cfg, "optimizer": "qaoa"})
+        results["qaoa_ideal"] = bt_ideal.run(returns)
+
+        # Noisy QAOA
+        bt_noisy = QuantumBacktester(config={
+            **base_cfg, "optimizer": "noisy_qaoa",
+            "noise_model": noise_model,
+        })
+        results["qaoa_noisy"] = bt_noisy.run(returns)
+
+        # Mitigated QAOA (run at multiple noise levels, extrapolate)
+        bt_mitigated = QuantumBacktester(config={
+            **base_cfg, "optimizer": "mitigated_qaoa",
+            "noise_model": noise_model,
+        })
+        results["qaoa_mitigated"] = bt_mitigated.run(returns)
+
+        # Summary comparison
+        results["summary"] = {
+            name: {
+                "total_return": r.metrics["total_return"],
+                "sharpe_ratio": r.metrics["sharpe_ratio"],
+                "max_drawdown": r.metrics["max_drawdown"],
+                "transaction_costs": r.total_transaction_costs,
+            }
+            for name, r in results.items()
+            if isinstance(r, BacktestResult)
+        }
+
+        return results
+
     def _optimize(
         self, past_returns: pd.DataFrame, cfg: Dict[str, Any]
     ) -> np.ndarray:
@@ -249,12 +310,17 @@ class QuantumBacktester:
         mu = np.array(past_returns.mean())
         lw = LedoitWolf().fit(past_returns.values)
         cov = lw.covariance_
-        n_assets = len(mu)
         target_return = float(np.mean(mu))
         max_weight = cfg["max_weight"]
 
-        if cfg["optimizer"] == "qaoa":
+        optimizer = cfg["optimizer"]
+
+        if optimizer == "qaoa":
             return self._optimize_qaoa(mu, cov, target_return, cfg)
+        if optimizer == "noisy_qaoa":
+            return self._optimize_noisy_qaoa(mu, cov, target_return, cfg)
+        if optimizer == "mitigated_qaoa":
+            return self._optimize_mitigated_qaoa(mu, cov, target_return, cfg)
 
         # Classical fallback
         result = solve_markowitz_scipy(
@@ -295,3 +361,73 @@ class QuantumBacktester:
             cfg["max_weight"],
         )
         return decoded
+
+    def _optimize_noisy_qaoa(
+        self,
+        mu: np.ndarray,
+        cov: np.ndarray,
+        target_return: float,
+        cfg: Dict[str, Any],
+    ) -> np.ndarray:
+        """QAOA with simulated gate noise degrading the solution."""
+        ideal_weights = self._optimize_qaoa(mu, cov, target_return, cfg)
+
+        noise_model = cfg.get("noise_model")
+        if noise_model is None:
+            return ideal_weights
+
+        # Simulate noise impact: perturb weights proportional to error rates
+        rng = np.random.default_rng(cfg.get("qaoa_seed", 42))
+        noise_strength = noise_model.single_qubit_error + noise_model.two_qubit_error
+        perturbation = rng.normal(0, noise_strength, len(ideal_weights))
+        noisy_weights = ideal_weights + perturbation
+
+        # Project back to valid weights (non-negative, sum <= 1)
+        noisy_weights = np.maximum(noisy_weights, 0.0)
+        total = np.sum(noisy_weights)
+        if total > 1e-10:
+            noisy_weights /= total
+        else:
+            noisy_weights = np.ones(len(mu)) / len(mu)
+
+        return noisy_weights
+
+    def _optimize_mitigated_qaoa(
+        self,
+        mu: np.ndarray,
+        cov: np.ndarray,
+        target_return: float,
+        cfg: Dict[str, Any],
+    ) -> np.ndarray:
+        """ZNE-inspired mitigation: run at multiple noise levels, extrapolate.
+
+        Runs QAOA at noise scales [1x, 2x, 3x] and extrapolates weights
+        to zero noise via Richardson extrapolation.
+        """
+        noise_model = cfg.get("noise_model")
+        if noise_model is None:
+            return self._optimize_qaoa(mu, cov, target_return, cfg)
+
+        scale_factors = [1.0, 2.0, 3.0]
+        weight_samples = []
+
+        for sf in scale_factors:
+            scaled = noise_model.scale(sf)
+            cfg_scaled = {**cfg, "noise_model": scaled, "optimizer": "noisy_qaoa"}
+            w = self._optimize_noisy_qaoa(mu, cov, target_return, cfg_scaled)
+            weight_samples.append(w)
+
+        # Richardson extrapolation per weight component
+        weights_matrix = np.array(weight_samples)  # (3, n_assets)
+        mitigated = np.zeros(weights_matrix.shape[1])
+        for j in range(weights_matrix.shape[1]):
+            coeffs = np.polyfit(scale_factors, weights_matrix[:, j], 2)
+            mitigated[j] = max(np.polyval(coeffs, 0.0), 0.0)
+
+        total = np.sum(mitigated)
+        if total > 1e-10:
+            mitigated /= total
+        else:
+            mitigated = np.ones(len(mu)) / len(mu)
+
+        return mitigated

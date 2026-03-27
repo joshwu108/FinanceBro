@@ -11,10 +11,21 @@ import type {
   WSStatus,
 } from "./types"
 import * as api from "./api"
+import type {
+  QuantumPortfolioResponse,
+  OptionPricingResponse,
+  ConvergenceResponse,
+  QuantumMLResponse,
+  QuantumBacktestResponse,
+  PortfolioScalingResponse,
+  MaxCutScalingResponse,
+  CppSpeedupResponse,
+} from "./quantum-types"
+import * as quantumApi from "./quantum-api"
 
 type Mode = "research" | "live"
 type Status = "IDLE" | "BACKTEST" | "LIVE"
-type ChartTab = "price" | "equity" | "analytics" | "portfolio" | "experiments" | "trades"
+type ChartTab = "price" | "equity" | "analytics" | "portfolio" | "experiments" | "trades" | "predict" | "quantum"
 
 interface AppState {
   // UI state
@@ -62,6 +73,27 @@ interface AppState {
     startDate?: string,
     endDate?: string
   ) => Promise<void>
+
+  // Quantum state
+  quantumRunning: boolean
+  quantumPortfolioResult: QuantumPortfolioResponse | null
+  optionPricingResult: OptionPricingResponse | null
+  convergenceResult: ConvergenceResponse | null
+  quantumMLResult: QuantumMLResponse | null
+  quantumBacktestResult: QuantumBacktestResponse | null
+  portfolioScalingResult: PortfolioScalingResponse | null
+  maxCutScalingResult: MaxCutScalingResponse | null
+  cppSpeedupResult: CppSpeedupResponse | null
+
+  // Quantum actions
+  runQuantumPortfolio: (tickers: string[], opts?: Record<string, any>) => Promise<void>
+  runOptionPricing: (params: Parameters<typeof quantumApi.priceOption>[0]) => Promise<void>
+  runConvergence: () => Promise<void>
+  runQuantumML: (ticker: string, opts?: Record<string, any>) => Promise<void>
+  runQuantumBacktest: (tickers: string[], opts?: Record<string, any>) => Promise<void>
+  runPortfolioScaling: () => Promise<void>
+  runMaxCutScaling: () => Promise<void>
+  runCppSpeedup: () => Promise<void>
 
   // Computed helpers
   activeSymbolResult: () => SymbolResult | null
@@ -283,6 +315,130 @@ export const useAppStore = create<AppState>((set, get) => ({
           "error"
         )
       )
+    }
+  },
+
+  // Quantum state
+  quantumRunning: false,
+  quantumPortfolioResult: null,
+  optionPricingResult: null,
+  convergenceResult: null,
+  quantumMLResult: null,
+  quantumBacktestResult: null,
+  portfolioScalingResult: null,
+  maxCutScalingResult: null,
+  cppSpeedupResult: null,
+
+  // Quantum actions
+  runQuantumPortfolio: async (tickers, opts = {}) => {
+    const { addLog } = get()
+    set({ quantumRunning: true })
+    addLog(createLogEntry("quantum", `Running QAOA portfolio: ${tickers.join(", ")}`, "info"))
+    try {
+      const result = await quantumApi.runQuantumPortfolio({ tickers, ...opts })
+      set({ quantumPortfolioResult: result, quantumRunning: false })
+      addLog(createLogEntry("quantum", "Portfolio optimization complete", "success"))
+    } catch (e) {
+      set({ quantumRunning: false })
+      addLog(createLogEntry("quantum", `Portfolio optimization failed: ${e instanceof Error ? e.message : "Unknown"}`, "error"))
+    }
+  },
+
+  runOptionPricing: async (params) => {
+    const { addLog } = get()
+    set({ quantumRunning: true })
+    addLog(createLogEntry("quantum", "Pricing option (BS + MC + QAE)", "info"))
+    try {
+      const result = await quantumApi.priceOption(params)
+      set({ optionPricingResult: result, quantumRunning: false })
+      addLog(createLogEntry("quantum", "Option pricing complete", "success"))
+    } catch (e) {
+      set({ quantumRunning: false })
+      addLog(createLogEntry("quantum", `Option pricing failed: ${e instanceof Error ? e.message : "Unknown"}`, "error"))
+    }
+  },
+
+  runConvergence: async () => {
+    const { addLog } = get()
+    set({ quantumRunning: true })
+    addLog(createLogEntry("quantum", "Running convergence analysis", "info"))
+    try {
+      const result = await quantumApi.runConvergenceAnalysis()
+      set({ convergenceResult: result, quantumRunning: false })
+      addLog(createLogEntry("quantum", "Convergence analysis complete", "success"))
+    } catch (e) {
+      set({ quantumRunning: false })
+      addLog(createLogEntry("quantum", `Convergence analysis failed: ${e instanceof Error ? e.message : "Unknown"}`, "error"))
+    }
+  },
+
+  runQuantumML: async (ticker, opts = {}) => {
+    const { addLog } = get()
+    set({ quantumRunning: true })
+    addLog(createLogEntry("quantum", `Running quantum ML: ${ticker}`, "info"))
+    try {
+      const result = await quantumApi.runQuantumML({ ticker, ...opts })
+      set({ quantumMLResult: result, quantumRunning: false })
+      addLog(createLogEntry("quantum", `Quantum ML complete — best: ${result.comparison?.best_method ?? "N/A"}`, "success"))
+    } catch (e) {
+      set({ quantumRunning: false })
+      addLog(createLogEntry("quantum", `Quantum ML failed: ${e instanceof Error ? e.message : "Unknown"}`, "error"))
+    }
+  },
+
+  runQuantumBacktest: async (tickers, opts = {}) => {
+    const { addLog } = get()
+    set({ quantumRunning: true })
+    addLog(createLogEntry("quantum", `Running quantum backtest: ${tickers.join(", ")}`, "info"))
+    try {
+      const result = await quantumApi.runQuantumBacktest({ tickers, ...opts })
+      set({ quantumBacktestResult: result, quantumRunning: false })
+      addLog(createLogEntry("quantum", "Quantum backtest complete", "success"))
+    } catch (e) {
+      set({ quantumRunning: false })
+      addLog(createLogEntry("quantum", `Quantum backtest failed: ${e instanceof Error ? e.message : "Unknown"}`, "error"))
+    }
+  },
+
+  runPortfolioScaling: async () => {
+    const { addLog } = get()
+    set({ quantumRunning: true })
+    addLog(createLogEntry("quantum", "Running portfolio scaling benchmark", "info"))
+    try {
+      const result = await quantumApi.runPortfolioScaling()
+      set({ portfolioScalingResult: result, quantumRunning: false })
+      addLog(createLogEntry("quantum", `Portfolio scaling complete: ${result.results.length} data points`, "success"))
+    } catch (e) {
+      set({ quantumRunning: false })
+      addLog(createLogEntry("quantum", `Portfolio scaling failed: ${e instanceof Error ? e.message : "Unknown"}`, "error"))
+    }
+  },
+
+  runMaxCutScaling: async () => {
+    const { addLog } = get()
+    set({ quantumRunning: true })
+    addLog(createLogEntry("quantum", "Running Max-Cut scaling benchmark", "info"))
+    try {
+      const result = await quantumApi.runMaxCutScaling()
+      set({ maxCutScalingResult: result, quantumRunning: false })
+      addLog(createLogEntry("quantum", `Max-Cut scaling complete: ${result.results.length} data points`, "success"))
+    } catch (e) {
+      set({ quantumRunning: false })
+      addLog(createLogEntry("quantum", `Max-Cut scaling failed: ${e instanceof Error ? e.message : "Unknown"}`, "error"))
+    }
+  },
+
+  runCppSpeedup: async () => {
+    const { addLog } = get()
+    set({ quantumRunning: true })
+    addLog(createLogEntry("quantum", "Running C++ speedup benchmark", "info"))
+    try {
+      const result = await quantumApi.runCppSpeedup()
+      set({ cppSpeedupResult: result, quantumRunning: false })
+      addLog(createLogEntry("quantum", `C++ benchmark complete: has_cpp=${result.has_cpp}`, "success"))
+    } catch (e) {
+      set({ quantumRunning: false })
+      addLog(createLogEntry("quantum", `C++ benchmark failed: ${e instanceof Error ? e.message : "Unknown"}`, "error"))
     }
   },
 
